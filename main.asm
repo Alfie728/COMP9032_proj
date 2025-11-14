@@ -1,8 +1,8 @@
 ; ==============================================================================
-; Drone Search Simulation Project Stub
+; Drone Search Simulation Project Stub (Search-Path Focus)
 ; Target: ATmega2560 @ lab board, Microchip Studio build
-; This scaffold divides the project into four work packages and provides
-; placeholder routines, macros, and data structures required by the spec.
+; Scope limited to keypad input, search-path generation, and LCD playback.
+; Altitude/speed/crash behaviour is hard-coded per Figure 4 requirements.
 ; ==============================================================================
 
 .include "m2560def.inc"
@@ -46,20 +46,16 @@
 .equ LCD_COLS           = 16
 .equ LCD_ROWS           = 2
 .equ VISIBILITY_MAX     = 9            ; displayed in two chars
+.equ DEFAULT_ALT_DM     = 61           ; Figure 4(c): 61 dm
+.equ DEFAULT_SPEED_DMPS = 2            ; Figure 4(c): 2 dm/s
 
 ; System states
 .equ STATE_IDLE         = 0
 .equ STATE_CONFIG       = 1
 .equ STATE_PATH_GEN     = 2
 .equ STATE_SCROLL_PATH  = 3
-.equ STATE_SEARCH       = 4
-.equ STATE_PAUSE        = 5
-.equ STATE_DONE         = 6
-
-; Flight mode flags
-.equ MODE_FLIGHT        = 0
-.equ MODE_PAUSE         = 1
-.equ MODE_CRASH         = 2
+.equ STATE_PLAYBACK     = 4
+.equ STATE_DONE         = 5
 
 ; Push button bits on PINB
 .equ PB0_MASK           = 0b00000001
@@ -108,13 +104,12 @@ QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
 
-	; ----- Part 4: runtime flight state -----
+	; ----- Part 4: path playback state (speed/crash fixed) -----
 DroneState:            .byte 1          ; STATE_* value
-FlightModeVar:         .byte 1          ; MODE_* value
-AltitudeDm:            .byte 1          ; decimeter representation
-SpeedDmPerS:           .byte 1
-FlightTimer:           .byte 1          ; counts ticks spent at observation
-CrashFlag:             .byte 1
+PlaybackIndex:         .byte 1          ; observation index shown on LCD
+PlaybackTimer:         .byte 1          ; delays between observations
+AltitudeDm:            .byte 1          ; locked to DEFAULT_ALT_DM
+SpeedDmPerS:           .byte 1          ; locked to DEFAULT_SPEED_DMPS
 AccidentFoundFlag:     .byte 1
 
 	; LCD strings and scratch buffers
@@ -217,7 +212,7 @@ SampleInputs:
 	ret
 
 DriveOutputs:
-	; TODO: push buffered LCD lines, drive LED bar according to CrashFlag etc.
+	; TODO: push buffered LCD lines, optionally blink LED bar when playback ends
 	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
@@ -290,6 +285,17 @@ LcdWriteBuffer:
 	; TODO: push contents of LCDLine0/LCDLine1 to display
 	ret
 
+; Numeric/text formatting helpers for Figure 4 rendering
+.macro FORMAT_TWO_DIGIT
+	; @0 = source register (0-99), writes 2 ASCII chars via Z pointer
+	; TODO: implement BCD/decimal conversion with leading space logic
+.endmacro
+
+.macro WRITE_COORD_TRIPLE
+	; @0,@1,@2 = registers holding x,y,z; writes "x,y,z" via Z pointer
+	; Each component limited to two chars + comma separators
+.endmacro
+
 ; ----- Keypad helper routines -------------------------------------------------
 ScanKeypad:
 	; TODO: drive columns sequentially and read rows
@@ -352,55 +358,69 @@ StoreObservationPoint:
 	ret
 
 PreparePathScrollData:
-	; TODO: format buffer for LCD scrolling (line 0)
+	; TODO: format buffer for LCD scrolling (line 0) "0,0,0 / 3,3,6 / ..."
+	; TODO: ensure segments fit 16 chars and wrap like Figure 4(b)
 	ret
 
 ; ============================================================================== 
-; Part 4: Manual search runtime and output handling
+; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
 ; ============================================================================== 
 
-BeginSearchRun:
-	; TODO: executed when PB1 pressed, transition to STATE_SEARCH
+BeginScrollPreview:
+	; TODO: executed after PB0 path generation to enter STATE_SCROLL_PATH
+	ret
+
+BeginPlaybackRun:
+	; TODO: executed when PB1 pressed, seed PlaybackIndex/timer and move to STATE_PLAYBACK
 	ret
 
 RunStateMachine:
-	; TODO: branch on DroneState and call state handlers
+	; TODO: branch on DroneState and call config/path/playback handlers
 	ret
 
 HandleIdleState:
-	; TODO: wait for reset input
+	; TODO: wait for reset input, clear LCD, display prompt
+	ret
+
+HandleConfigState:
+	; TODO: update LCD with "loc:(x,y)" and "visib: d" per Figure 4(a)
+	ret
+
+HandlePathGenState:
+	; TODO: call GenerateSearchPath and transition to STATE_SCROLL_PATH
 	ret
 
 HandleScrollState:
-	; TODO: show observation list, advance ScrollHead per timer
+	; TODO: show observation list ("0,0,0 / 3,3,6 / ...") scrolling right->left
 	ret
 
-HandleSearchState:
-	; TODO: check keypad for Ua/Da/Us/Ds/Pause, update altitude/speed
-	ret
-
-HandlePauseState:
-	; TODO: maintain hover display until Pause released
+HandlePlaybackState:
+	; TODO: step through ObservationPath, highlight current point, display
+	; TODO: second line "P 61 2" with bold coordinates per Figure 4(c)
 	ret
 
 HandleDoneState:
-	; TODO: display accident found or not found
+	; TODO: show final point + accident status as in Figure 4(d)
 	ret
 
-AdvanceFlightTick:
-	; TODO: simulate altitude/speed changes and timer to next observation
+AdvanceScrollWindow:
+	; TODO: use ScrollTimer to shift ScrollHead and rebuild LCDLine0
 	ret
 
-CheckCrashCondition:
-	; TODO: compare altitude with terrain height, set CrashFlag/LED blink
+AdvancePlaybackStep:
+	; TODO: increment PlaybackTimer and advance PlaybackIndex when elapsed
 	ret
 
-UpdateLCDDuringFlight:
-	; TODO: line 0 path segment, line 1 state-altitude-speed tuple
+UpdateLCDForConfig:
+	; TODO: write pre-search info lines (loc/visib) to LCDLine buffers
 	ret
 
-UpdateLEDBank:
-	; TODO: LED steady on when running, flash if CrashFlag
+UpdateLCDForScroll:
+	; TODO: convert ObservationPath into slash-separated ASCII chunk
+	ret
+
+UpdateLCDForPlayback:
+	; TODO: line0 emphasises current point, line1 prints state+alt+speed
 	ret
 
 INT0_ISR:
