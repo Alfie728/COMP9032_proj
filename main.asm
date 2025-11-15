@@ -504,31 +504,59 @@ Beacon_blink_once:
 	ret
 
 Beacon1:
-	rcall Beacon_blink_once
-	ret
+    ; show PC0
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x01
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
 
 Beacon2:
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	ret
+    ; show PC1
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x02
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
 
 Beacon3:
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	ret
+    ; show PC2
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x04
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
 
 Beacon4:
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	rcall Beacon_blink_once
-	ret
+    ; show PC3
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x08
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
 
 Beacon5:
-	rcall Beacon4
-	rcall Beacon_blink_once
-	ret
+    ; show PC4 (not currently used)
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x10
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
 
 ; ------------------------------------------------------------------------------
 ; Disable JTAG so PF/PC pins are usable as GPIO (two writes sequence)
