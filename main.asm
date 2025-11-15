@@ -247,8 +247,10 @@ RESET:
 	rcall InitStack
 	rcall InitRegisters
 	rcall InitIOPorts
+	rcall DisableJTAG
 	; LED sanity check identical to Lab3 LED_flash
 	rcall LED_Flash
+	rcall LED_Port_Sweep
 	rcall InitLCDDriver
 	rcall InitKeypad
 	rcall InitTimers
@@ -503,6 +505,67 @@ LED_Flash:
 	mov temp7, workA
 	mov temp8, workB
 	delay
+	ret
+
+; ------------------------------------------------------------------------------
+; Sweep candidate LED ports (C -> H -> B) with visible 1s on/off
+; ------------------------------------------------------------------------------
+LED_Port_Sweep:
+	; constants for ~1s delay
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	; --- PORTC ---
+	ser workA
+	out DDRC, workA
+	out PORTC, workA
+	push temp7
+	push temp8
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+	clr workA
+	out PORTC, workA
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+	pop temp8
+	pop temp7
+
+	; --- PORTH --- (extended I/O -> use sts)
+	ser workA
+	sts DDRH, workA
+	sts PORTH, workA
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+	clr workA
+	sts PORTH, workA
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+
+	; --- PORTB ---
+	ser workA
+	out DDRB, workA
+	out PORTB, workA
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+	clr workA
+	out PORTB, workA
+	ldi temp7, low(60000)
+	ldi temp8, high(60000)
+	delay
+	ret
+
+; ------------------------------------------------------------------------------
+; Disable JTAG so PORTF/PORTC pins operate as GPIO (two writes to MCUCR)
+; ------------------------------------------------------------------------------
+DisableJTAG:
+	lds workB, MCUCR
+	ori workB, (1<<JTD)
+	sts MCUCR, workB
+	sts MCUCR, workB
 	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
