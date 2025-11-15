@@ -25,7 +25,7 @@
 .def temp12     = r14
 .def temp13     = r15
 .def lcd_data   = r16
-.def data       = lcd_data
+.def data       = r30
 .def workA      = r17
 .def workB      = r18
 .def workC      = r19
@@ -117,56 +117,8 @@ loop2:
 	brne loop1
 .endmacro
 
-; LCD write macros must be defined before first use (InitLCDDriver)
-.macro LCD_WRITE_CMD
-	; @0 = command byte in register
-	out PORTF, @0
-	; RS=0, RW=0 for command write
-	ldi workA, (0 << LCD_RS)|(0 << LCD_RW)
-	out PORTA, workA
-	; setup/hold delays matching lab macros
-	ldi workA, low(100)
-	mov temp7, workA
-	ldi workA, high(100)
-	mov temp8, workA
-	delay
-	sbi PORTA, LCD_E
-	ldi workA, low(300)
-	mov temp7, workA
-	ldi workA, high(300)
-	mov temp8, workA
-	delay
-	cbi PORTA, LCD_E
-	ldi workA, low(300)
-	mov temp7, workA
-	ldi workA, high(300)
-	mov temp8, workA
-	delay
-.endmacro
-
-.macro LCD_WRITE_DATA
-	out PORTF, @0
-	; RS=1, RW=0 for data write
-	ldi workA, (1 << LCD_RS)|(0 << LCD_RW)
-	out PORTA, workA
-	ldi workA, low(100)
-	mov temp7, workA
-	ldi workA, high(100)
-	mov temp8, workA
-	delay
-	sbi PORTA, LCD_E
-	ldi workA, low(300)
-	mov temp7, workA
-	ldi workA, high(300)
-	mov temp8, workA
-	delay
-	cbi PORTA, LCD_E
-	ldi workA, low(300)
-	mov temp7, workA
-	ldi workA, high(300)
-	mov temp8, workA
-	delay
-.endmacro
+; Deprecated: old LCD_WRITE_CMD/LCD_WRITE_DATA macros removed.
+; Use lab-compatible macros: lcd_write_com, lcd_write_data, lcd_wait_busy.
 
 ; Lab-style LCD macros (exact timing/flow)
 .macro lcd_write_com
@@ -550,38 +502,7 @@ led_update:
 	pop temp0
 .endmacro
 
-; (moved LCD_WRITE_CMD / LCD_WRITE_DATA earlier)
 
-WaitLcdBusy:
-	push temp0
-	push temp1
-	clr temp0
-	out DDRF, temp0
-	ldi workA, (0 << LCD_RS)|(1 << LCD_RW)
-	out PORTA, workA
-lcd_busy_loop:
-	ldi workA, low(100)
-	mov temp7, workA
-	ldi workA, high(100)
-	mov temp8, workA
-	delay
-	sbi PORTA, LCD_E
-	ldi workA, low(300)
-	mov temp7, workA
-	ldi workA, high(300)
-	mov temp8, workA
-	delay
-	in temp1, PINF
-	cbi PORTA, LCD_E
-	sbrc temp1, LCD_BUSY_BIT
-	rjmp lcd_busy_loop
-	clr temp0
-	out PORTA, temp0
-	ldi workA, PORTFDIR
-	out DDRF, workA
-	pop temp1
-	pop temp0
-	ret
 
 LcdClear:
 	lcd_wait_busy
@@ -622,14 +543,18 @@ LcdWriteBuffer:
 	rcall LcdSetCursor
 	ldi YL, low(LCDLine0)
 	ldi YH, high(LCDLine0)
-	ldi workC, LCD_COLS
-	mov temp0, workC
+    ldi workC, LCD_COLS
+    mov temp0, workC
 write_line0_loop:
-	ld data, Y+
-	lcd_wait_busy
-	lcd_write_data
-	dec temp0
-	brne write_line0_loop
+    ld data, Y+
+    lcd_wait_busy
+    lcd_write_data
+    dec temp0
+    brne write_line0_continue
+    rjmp write_line0_done
+write_line0_continue:
+    rjmp write_line0_loop
+write_line0_done:
 
 	; Line 1
 	ldi workA, 1
@@ -637,14 +562,18 @@ write_line0_loop:
 	rcall LcdSetCursor
 	ldi YL, low(LCDLine1)
 	ldi YH, high(LCDLine1)
-	ldi workC, LCD_COLS
-	mov temp0, workC
+    ldi workC, LCD_COLS
+    mov temp0, workC
 write_line1_loop:
-	ld data, Y+
-	lcd_wait_busy
-	lcd_write_data
-	dec temp0
-	brne write_line1_loop
+    ld data, Y+
+    lcd_wait_busy
+    lcd_write_data
+    dec temp0
+    brne write_line1_continue
+    rjmp write_line1_done
+write_line1_continue:
+    rjmp write_line1_loop
+write_line1_done:
 
 	pop YL
 	pop YH
