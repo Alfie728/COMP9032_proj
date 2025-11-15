@@ -75,6 +75,79 @@
 .equ TICK_10MS          = 100          ; placeholder for software timer loops
 .equ SCROLL_PERIOD      = 5            ; number of ticks between LCD scrolls
 
+;-------------------------------------------------------------------------------
+; Macro Definition
+;-------------------------------------------------------------------------------
+;void load_array_from_program(program addr, data addr, int size)
+;Description: data addr <- program addr
+;r16: temp, r17: counter
+.macro load_array_from_program
+	push zh
+	push zl
+	push xh
+	push xl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+	ldi zh, high(@0 << 1)
+	ldi zl, low(@0 << 1)
+	ldi xh,	high(@1)
+	ldi xl, low(@1)
+	clr r17
+load_byte_from_program:
+	cpi r17, @2 
+	brsh load_byte_from_program_end
+	lpm r16, z+
+	st x+, r16
+	inc r17
+	rjmp load_byte_from_program
+load_byte_from_program_end:
+	pop r17
+	pop r16
+	out SREG, r16
+	pop r16
+	pop xl
+	pop xh
+	pop zl
+	pop zh
+.endmacro
+
+;void load_array_from_program(data addr1, data addr2, int size) 
+; Description: data addr1 <- data addr2
+;r16: temp, r17: counter
+.macro load_array_from_data
+	push yh
+	push yl
+	push xh
+	push xl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	ldi xh,	high(@1)
+	ldi xl, low(@1)
+	clr r17
+load_byte_from_data:
+	cpi r17, @2 
+	brsh load_byte_from_data_end
+	ld r16, x+
+	st y+, r16
+	inc r17
+	rjmp load_byte_from_data
+load_byte_from_data_end:
+	pop r17
+	pop r16
+	out SREG, r16
+	pop r16
+	pop xl
+	pop xh
+	pop yl
+	pop yh
+.endmacro
+
 ; ------------------------------------------------------------------------------
 ; Data memory layout
 ; ------------------------------------------------------------------------------
@@ -438,6 +511,42 @@ TIMER0_OVF_ISR:
 TIMER2_OVF_ISR:
 	; TODO: LED blink timing or additional periodic work
 	reti
+
+
+;-------------------------------------------------------------------------------
+; Program Data Definition
+;-------------------------------------------------------------------------------
+m: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,2,2,2,2,2,2,2,0,0,0,0,0,0,0, \
+		0,2,4,4,4,4,4,2,2,2,2,2,2,2,2, \
+		0,2,4,6,6,6,4,2,4,4,4,4,4,4,4, \
+		0,2,4,6,8,6,4,2,4,6,6,6,6,6,4, \
+		0,2,4,6,6,6,4,2,4,6,8,8,8,6,4, \
+		0,2,4,4,4,4,4,2,4,6,8,10,8,6,4, \
+		0,2,2,2,2,2,2,2,4,6,8,8,8,6,4, \
+		0,0,2,2,2,2,2,2,4,6,6,6,6,6,4, \
+		0,0,2,4,4,4,2,2,4,4,4,4,4,4,4, \
+		0,0,2,4,6,4,2,2,2,2,2,2,2,2,2, \
+		0,0,2,4,4,4,2,0,0,0,0,0,0,0,0, \
+		0,0,2,2,2,2,2,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+v: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 ; ==============================================================================
 ; End of stub
