@@ -245,41 +245,19 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 RESET:
     cli
     rcall InitStack
-	rcall InitRegisters
+    rcall InitRegisters
     rcall InitIOPorts
-    ; EARLY inline LED proof (no subroutines): set DDRC/PORTC and pause
-    ldi r17, 0xFF
-    out DDRC, r17
-    out PORTC, r17
-    ; short pause ~100ms using delay macro counters
-    ldi temp7, low(12000)
-    ldi temp8, high(12000)
-    ldi r18, 0x03
-early_pause_loop1:
-    dec r18
-    nop
-    brne early_pause_loop1
-    subi temp7, 1
-    sbci temp8, 0
-    brne early_pause_loop1
-    ; turn LEDs off then continue
-    clr r17
-    out PORTC, r17
-	rcall InitLCDDriver
-	rcall InitKeypad
-	rcall InitTimers
-	rcall InitStateMachine
-	sei
-	rjmp MainLoop
+    rcall DisableJTAG
+LED_ONLY_LOOP:
+    rcall LED_Flash
+    rjmp LED_ONLY_LOOP
 
 ; ------------------------------------------------------------------------------
 ; Main cooperative scheduler
 ; ------------------------------------------------------------------------------
 MainLoop:
-	rcall SampleInputs        ; read buttons/keypad, update snapshots
-	rcall RunStateMachine     ; central dispatcher using DroneState
-	rcall DriveOutputs        ; LCD, LED bar, buzzer if any
-	rjmp MainLoop
+    ; Not used in LED-only bring-up
+    rjmp MainLoop
 
 ; ==============================================================================
 ; Part 1: Platform services (initialisation, LCD, keypad, timing)
@@ -471,18 +449,36 @@ DriveOutputs:
 hb_minus:
 	ldi workC, '-'
 hb_store:
-	sts LCDLine0, workC
+    sts LCDLine0, workC
+    ; LED-only bring-up: comment out LCD writes and LED state logic
+    ret
 
-	rcall LcdWriteBuffer
-	lds temp0, DroneState
-	tst temp0
-	brne led_on
-	clr workA
-	rjmp led_update
-led_on:
+; ------------------------------------------------------------------------------
+; LED flash routine (Lab 3 style). One on/off cycle per call.
+; ------------------------------------------------------------------------------
+LED_Flash:
+	; LED ON
 	ser workA
-led_update:
 	out PORTC, workA
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
+	; LED OFF
+	clr workA
+	out PORTC, workA
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
+	ret
+
+; ------------------------------------------------------------------------------
+; Disable JTAG so PF/PC pins are usable as GPIO (two writes sequence)
+; ------------------------------------------------------------------------------
+DisableJTAG:
+	lds workB, MCUCR
+	ori workB, (1<<JTD)
+	sts MCUCR, workB
+	sts MCUCR, workB
 	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
