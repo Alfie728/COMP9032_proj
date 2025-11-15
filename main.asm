@@ -250,23 +250,14 @@ RESET:
     out SPH, workA
     ldi workA, low(RAMEND)
     out SPL, workA
-    rcall Beacon1
     rcall InitRegisters
-    rcall Beacon2
     rcall InitIOPorts
-    rcall Beacon3
-    rcall DisableJTAG
-    rcall Beacon4
     rcall InitLCDDriver
-    rcall Beacon5
     rcall InitKeypad
-    rcall Beacon6
     rcall InitTimers
-    rcall Beacon7
     rcall InitStateMachine
-    rcall Beacon8
     sei
-    rcall Beacon9
+    rcall Beacon
     rjmp MainLoop
 
 ; ------------------------------------------------------------------------------
@@ -510,107 +501,7 @@ Beacon_delay:
 	delay
 	ret
 
-Beacon_blink_once:
-	; ensure DDRC as output
-	ser workB
-	out DDRC, workB
-	ser workA
-	out PORTC, workA
-	rcall Beacon_delay
-	clr workA
-	out PORTC, workA
-	rcall Beacon_delay
-	ret
-
-Beacon1:
-    ; show PC0
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x01
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon2:
-    ; show PC1
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x02
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon3:
-    ; show PC2
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x04
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon4:
-    ; show PC3
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x08
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon5:
-    ; show PC4 (not currently used)
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x10
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon6:
-    ; show PC5
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x20
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon7:
-    ; show PC6
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x40
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon8:
-    ; show PC7
-    ser workB
-    out DDRC, workB
-    ldi workA, 0x80
-    out PORTC, workA
-    rcall Beacon_delay
-    clr workA
-    out PORTC, workA
-    ret
-
-Beacon9:
+Beacon:
     ; show ALL LEDs briefly after enabling interrupts
     ser workB
     out DDRC, workB
@@ -620,16 +511,6 @@ Beacon9:
     clr workA
     out PORTC, workA
     ret
-
-; ------------------------------------------------------------------------------
-; Disable JTAG so PF/PC pins are usable as GPIO (two writes sequence)
-; ------------------------------------------------------------------------------
-DisableJTAG:
-	lds workB, MCUCR
-	ori workB, (1<<JTD)
-	sts MCUCR, workB
-	sts MCUCR, workB
-	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
 .macro PUSH_CTX
