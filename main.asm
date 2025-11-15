@@ -406,17 +406,28 @@ SampleInputs:
 	ret
 
 DriveOutputs:
+	; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
+	lds workB, ScrollTimer
+	sbrs workB, 7
+	rjmp hb_minus
+	ldi workC, '|'
+	rjmp hb_store
+hb_minus:
+	ldi workC, '-'
+hb_store:
+	sts LCDLine0, workC
+
 	rcall LcdWriteBuffer
 	lds temp0, DroneState
 	tst temp0
 	brne led_on
-	clr temp1
+	clr workA
 	rjmp led_update
 led_on:
-    ser workA
+	ser workA
 led_update:
-    out PORTC, workA
-    ret
+	out PORTC, workA
+	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
 .macro PUSH_CTX
