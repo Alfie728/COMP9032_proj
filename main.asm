@@ -243,10 +243,28 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 ; Program entry
 ; ------------------------------------------------------------------------------
 RESET:
-	cli
-	rcall InitStack
+    cli
+    rcall InitStack
 	rcall InitRegisters
-	rcall InitIOPorts
+    rcall InitIOPorts
+    ; EARLY inline LED proof (no subroutines): set DDRC/PORTC and pause
+    ldi r17, 0xFF
+    out DDRC, r17
+    out PORTC, r17
+    ; short pause ~100ms using delay macro counters
+    ldi temp7, low(12000)
+    ldi temp8, high(12000)
+    ldi r18, 0x03
+early_pause_loop1:
+    dec r18
+    nop
+    brne early_pause_loop1
+    subi temp7, 1
+    sbci temp8, 0
+    brne early_pause_loop1
+    ; turn LEDs off then continue
+    clr r17
+    out PORTC, r17
 	rcall InitLCDDriver
 	rcall InitKeypad
 	rcall InitTimers
