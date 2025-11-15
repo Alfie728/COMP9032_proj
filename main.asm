@@ -248,15 +248,13 @@ RESET:
     rcall InitRegisters
     rcall InitIOPorts
     rcall DisableJTAG
-LED_ONLY_LOOP:
-    rcall LED_Flash
-    rjmp LED_ONLY_LOOP
+    rjmp MainLoop
 
 ; ------------------------------------------------------------------------------
 ; Main cooperative scheduler
 ; ------------------------------------------------------------------------------
 MainLoop:
-    ; Not used in LED-only bring-up
+    rcall LED_Flash
     rjmp MainLoop
 
 ; ==============================================================================
