@@ -120,20 +120,51 @@ loop2:
 .macro LCD_WRITE_CMD
 	; @0 = command byte in register
 	out PORTF, @0
-	cbi PORTA, LCD_RS
-	cbi PORTA, LCD_RW
+	; RS=0, RW=0 for command write
+	ldi workA, (0 << LCD_RS)|(0 << LCD_RW)
+	out PORTA, workA
+	; setup/hold delays matching lab macros
+	ldi workA, low(100)
+	mov temp7, workA
+	ldi workA, high(100)
+	mov temp8, workA
+	delay
 	sbi PORTA, LCD_E
-	nop
+	ldi workA, low(300)
+	mov temp7, workA
+	ldi workA, high(300)
+	mov temp8, workA
+	delay
 	cbi PORTA, LCD_E
+	ldi workA, low(300)
+	mov temp7, workA
+	ldi workA, high(300)
+	mov temp8, workA
+	delay
 .endmacro
 
 .macro LCD_WRITE_DATA
 	out PORTF, @0
-	sbi PORTA, LCD_RS
-	cbi PORTA, LCD_RW
+	; RS=1, RW=0 for data write
+	ldi workA, (1 << LCD_RS)|(0 << LCD_RW)
+	out PORTA, workA
+	ldi workA, low(100)
+	mov temp7, workA
+	ldi workA, high(100)
+	mov temp8, workA
+	delay
 	sbi PORTA, LCD_E
-	nop
+	ldi workA, low(300)
+	mov temp7, workA
+	ldi workA, high(300)
+	mov temp8, workA
+	delay
 	cbi PORTA, LCD_E
+	ldi workA, low(300)
+	mov temp7, workA
+	ldi workA, high(300)
+	mov temp8, workA
+	delay
 .endmacro
 
 ; ------------------------------------------------------------------------------
