@@ -335,12 +335,13 @@ InitTimers:
 	clr temp0
 	out TCNT0, temp0
 
-	; Timer2 unused for now
-	clr temp0
-	out TCCR2A, temp0
-	out TCCR2B, temp0
-	sts TIMSK2, temp0
-	ret
+    ; Timer2 unused for now
+    clr temp0
+    ; TCCR2A/TCCR2B are in extended I/O on ATmega2560 -> use sts
+    sts TCCR2A, temp0
+    sts TCCR2B, temp0
+    sts TIMSK2, temp0
+    ret
 
 InitStateMachine:
 	clr temp0
