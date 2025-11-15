@@ -240,14 +240,19 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 	jmp TIMER0_OVF_ISR      ; used for 10 ms tick
 
 ; ------------------------------------------------------------------------------
-; Program entry
+; ------------------------------------------------------------------------------
+; Program entry with step beacons to isolate failures
 ; ------------------------------------------------------------------------------
 RESET:
     cli
     rcall InitStack
+    rcall Beacon1
     rcall InitRegisters
+    rcall Beacon2
     rcall InitIOPorts
+    rcall Beacon3
     rcall DisableJTAG
+    rcall Beacon4
     rjmp MainLoop
 
 ; ------------------------------------------------------------------------------
@@ -455,18 +460,21 @@ hb_store:
 ; LED flash routine (Lab 3 style). One on/off cycle per call.
 ; ------------------------------------------------------------------------------
 LED_Flash:
-	; LED ON
-	ser workA
+	; LED chaser across PORTC (one-hot)
+	ser workB
+	out DDRC, workB
+	ldi workA, 0x01
+	ldi workC, 8
+led_step_loop2:
 	out PORTC, workA
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
+	ldi temp7, low(40000)
+	ldi temp8, high(40000)
 	delay
-	; LED OFF
+	lsl workA
+	dec workC
+	brne led_step_loop2
 	clr workA
 	out PORTC, workA
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
-	delay
 	ret
 
 ; ------------------------------------------------------------------------------
