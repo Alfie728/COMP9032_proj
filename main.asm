@@ -49,6 +49,24 @@
 .equ DEFAULT_ALT_DM     = 61           ; Figure 4(c): 61 dm
 .equ DEFAULT_SPEED_DMPS = 2            ; Figure 4(c): 2 dm/s
 
+; LCD command constants (reuse Lab 3/4 sequences)
+.equ LCD_FUNC_SET       = 0x30
+.equ LCD_ENTRY_SET      = 0x04
+.equ LCD_SET_ADD        = 0x80
+.equ LCD_DISPLAY        = 0x08
+.equ LCD_CLEAR          = 0x01
+.equ LCD_RETURN         = 0x02
+.equ SEC_DISPLAY_ADD    = 0x40
+
+; Port direction masks
+.equ PORTFDIR           = 0xFF         ; PF7-0 outputs for LCD data
+.equ PORTLDIR           = 0xF0         ; PL7-4 outputs (columns), PL3-0 inputs
+.equ LED_DDR_MASK       = 0xFF
+
+; Keypad timing
+.equ KEYPAD_SETTLE_LO   = low(3000)
+.equ KEYPAD_SETTLE_HI   = high(3000)
+
 ; System states
 .equ STATE_IDLE         = 0
 .equ STATE_CONFIG       = 1
@@ -70,10 +88,51 @@
 .equ LCD_E              = 6
 .equ LCD_RW             = 5
 .equ LCD_BUSY_BIT       = 7
+.equ LCD_N              = 3
+.equ LCD_ID             = 1
+.equ LCD_S              = 0
+.equ LCD_D              = 2
+.equ LCD_C              = 1
+.equ LCD_B              = 0
 
 ; Timing constants
 .equ TICK_10MS          = 100          ; placeholder for software timer loops
 .equ SCROLL_PERIOD      = 5            ; number of ticks between LCD scrolls
+
+; ------------------------------------------------------------------------------
+; Utility macros reused from Lab 3/4
+; ------------------------------------------------------------------------------
+.macro delay
+loop1:
+	ldi temp10, 0x03
+loop2:
+	dec temp10
+	nop
+	brne loop2
+	subi temp7, 1
+	sbci temp8, 0
+	brne loop1
+.endmacro
+
+; LCD write macros must be defined before first use (InitLCDDriver)
+.macro LCD_WRITE_CMD
+	; @0 = command byte in register
+	out PORTF, @0
+	cbi PORTA, LCD_RS
+	cbi PORTA, LCD_RW
+	sbi PORTA, LCD_E
+	nop
+	cbi PORTA, LCD_E
+.endmacro
+
+.macro LCD_WRITE_DATA
+	out PORTF, @0
+	sbi PORTA, LCD_RS
+	cbi PORTA, LCD_RW
+	sbi PORTA, LCD_E
+	nop
+	cbi PORTA, LCD_E
+.endmacro
 
 ; ------------------------------------------------------------------------------
 ; Data memory layout
@@ -84,6 +143,7 @@ SystemTick:            .byte 1
 ScrollTimer:           .byte 1
 FlashTimer:            .byte 1
 KeypadSnapshot:        .byte 1
+KeypadHold:            .byte 1
 ButtonSnapshot:        .byte 1
 
 	; ----- Part 2: user configuration -----
@@ -124,15 +184,16 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 ; Interrupt vector table (add ISRs as needed)
 ; ------------------------------------------------------------------------------
 .org 0x0000
-	rjmp RESET
+	jmp RESET
 .org INT0addr
-	rjmp INT0_ISR            ; PB0 if used as interrupt
+	jmp INT0_ISR            ; PB0 if used as interrupt
 .org INT1addr
-	rjmp INT1_ISR            ; PB1 if used as interrupt
-.org OVF0addr
-	rjmp TIMER0_OVF_ISR      ; used for 10 ms tick
+	jmp INT1_ISR            ; PB1 if used as interrupt
+; Ensure ascending vector order to avoid .cseg overlap.
 .org OVF2addr
-	rjmp TIMER2_OVF_ISR      ; optional LED blink or keypad debounce
+	jmp TIMER2_OVF_ISR      ; optional LED blink or keypad debounce
+.org OVF0addr
+	jmp TIMER0_OVF_ISR      ; used for 10 ms tick
 
 ; ------------------------------------------------------------------------------
 ; Program entry
@@ -158,9 +219,9 @@ MainLoop:
 	rcall DriveOutputs        ; LCD, LED bar, buzzer if any
 	rjmp MainLoop
 
-; ============================================================================== 
+; ==============================================================================
 ; Part 1: Platform services (initialisation, LCD, keypad, timing)
-; ============================================================================== 
+; ==============================================================================
 
 InitStack:
 	ldi temp0, high(RAMEND)
@@ -187,32 +248,160 @@ InitRegisters:
 	ret
 
 InitIOPorts:
-	; TODO: configure LCD, keypad, push buttons, LED bar ports
+	; Configure LCD data/control ports as outputs
+	ldi temp0, PORTFDIR
+	out DDRF, temp0
+	out DDRA, temp0
+
+	; LED bar on PORTC
+	ldi temp0, LED_DDR_MASK
+	out DDRC, temp0
+	clr temp0
+	out PORTC, temp0
+
+	; Keypad columns on PL7-4 outputs, rows on PL3-0 inputs w/ pull-ups
+	ldi temp0, PORTLDIR
+	sts DDRL, temp0
+	ldi temp0, INIT_COL_MASK
+	sts PORTL, temp0
+
+	; Push buttons PB0 / PB1 as inputs with pull-ups
+	cbi DDRB, 0
+	cbi DDRB, 1
+	sbi PORTB, 0
+	sbi PORTB, 1
 	ret
 
 InitLCDDriver:
-	; TODO: send initialisation sequence
+	; Follows Lab 3/4 power-on timing sequence
+	ldi temp7, low(15000)
+	ldi temp8, high(15000)
+	delay
+
+	ldi lcd_data, LCD_FUNC_SET | (1 << LCD_N)
+	LCD_WRITE_CMD lcd_data
+	ldi temp7, low(4100)
+	ldi temp8, high(4100)
+	delay
+
+	LCD_WRITE_CMD lcd_data
+	ldi temp7, low(100)
+	ldi temp8, high(100)
+	delay
+
+	LCD_WRITE_CMD lcd_data
+	LCD_WRITE_CMD lcd_data
+
+	rcall WaitLcdBusy
+	ldi lcd_data, LCD_DISPLAY | (0 << LCD_D)
+	LCD_WRITE_CMD lcd_data
+
+	rcall WaitLcdBusy
+	ldi lcd_data, LCD_CLEAR
+	LCD_WRITE_CMD lcd_data
+
+	rcall WaitLcdBusy
+	ldi lcd_data, LCD_ENTRY_SET | (1 << LCD_ID)
+	LCD_WRITE_CMD lcd_data
+
+	rcall WaitLcdBusy
+	ldi lcd_data, LCD_DISPLAY | (1 << LCD_D) | (0 << LCD_C)
+	LCD_WRITE_CMD lcd_data
 	ret
 
 InitKeypad:
-	; TODO: set DDR for keypad rows/columns
+	ldi temp0, INIT_COL_MASK
+	sts PORTL, temp0
+	clr temp0
+	sts KeypadSnapshot, temp0
+	sts KeypadHold, temp0
 	ret
 
 InitTimers:
-	; TODO: configure Timer0 for periodic tick, Timer2 for PWM/LED/scrolling
+	clr temp0
+	out TCCR0A, temp0
+	ldi temp0, 0x03		; clk/64 prescaler
+	out TCCR0B, temp0
+	ldi temp0, (1 << TOIE0)
+	sts TIMSK0, temp0
+	clr temp0
+	out TCNT0, temp0
+
+	; Timer2 unused for now
+	clr temp0
+	out TCCR2A, temp0
+	out TCCR2B, temp0
+	sts TIMSK2, temp0
 	ret
 
 InitStateMachine:
-	; TODO: zero SRAM state, set DroneState to STATE_IDLE
+	clr temp0
+	sts SystemTick, temp0
+	sts ScrollTimer, temp0
+	sts FlashTimer, temp0
+	sts KeypadSnapshot, temp0
+	sts KeypadHold, temp0
+	sts ButtonSnapshot, temp0
+	sts AccidentX, temp0
+	sts AccidentY, temp0
+	sts Visibility, temp0
+	sts InputCursor, temp0
+	sts ConfigFlags, temp0
+	sts PathLength, temp0
+	sts PathIndex, temp0
+	sts ScrollHead, temp0
+	sts QueueHead, temp0
+	sts QueueTail, temp0
+	sts DroneState, temp0
+	sts PlaybackIndex, temp0
+	sts PlaybackTimer, temp0
+	sts AccidentFoundFlag, temp0
+
+	ldi temp0, DEFAULT_ALT_DM
+	sts AltitudeDm, temp0
+	ldi temp0, DEFAULT_SPEED_DMPS
+	sts SpeedDmPerS, temp0
+
+	; Fill LCD buffers with spaces
+	ldi YL, low(LCDLine0)
+	ldi YH, high(LCDLine0)
+	ldi temp1, LCD_COLS
+	ldi temp2, ' '
+fill_line0:
+	st Y+, temp2
+	dec temp1
+	brne fill_line0
+	ldi YL, low(LCDLine1)
+	ldi YH, high(LCDLine1)
+	ldi temp1, LCD_COLS
+fill_line1:
+	st Y+, temp2
+	dec temp1
+	brne fill_line1
 	ret
 
 SampleInputs:
-	; TODO: poll keypad by scanning columns, store result in KeypadSnapshot
-	; TODO: read push buttons PB0/PB1 into ButtonSnapshot
+	rcall ScanKeypad
+	rcall DecodeKey
+	rcall LatchKeyEvent
+
+	in temp0, PINB
+	com temp0
+	andi temp0, (PB0_MASK | PB1_MASK)
+	sts ButtonSnapshot, temp0
 	ret
 
 DriveOutputs:
-	; TODO: push buffered LCD lines, optionally blink LED bar when playback ends
+	rcall LcdWriteBuffer
+	lds temp0, DroneState
+	cpi temp0, STATE_IDLE
+	brne led_on
+	clr temp1
+	rjmp led_update
+led_on:
+	ser temp1
+led_update:
+	out PORTC, temp1
 	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
@@ -250,39 +439,104 @@ DriveOutputs:
 	pop temp0
 .endmacro
 
-.macro LCD_WRITE_CMD
-	; @0 = command byte in register
-	out PORTF, @0
-	cbi PORTA, LCD_RS
-	cbi PORTA, LCD_RW
-	sbi PORTA, LCD_E
-	nop
-	cbi PORTA, LCD_E
-.endmacro
-
-.macro LCD_WRITE_DATA
-	out PORTF, @0
-	sbi PORTA, LCD_RS
-	cbi PORTA, LCD_RW
-	sbi PORTA, LCD_E
-	nop
-	cbi PORTA, LCD_E
-.endmacro
+; (moved LCD_WRITE_CMD / LCD_WRITE_DATA earlier)
 
 WaitLcdBusy:
-	; TODO: poll busy flag using PINF when DDRF configured as input
+	push temp0
+	push temp1
+	clr temp0
+	out DDRF, temp0
+	ldi temp0, (0 << LCD_RS)|(1 << LCD_RW)
+	out PORTA, temp0
+lcd_busy_loop:
+	ldi temp7, low(100)
+	ldi temp8, high(100)
+	delay
+	sbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+	in temp1, PINF
+	cbi PORTA, LCD_E
+	sbrc temp1, LCD_BUSY_BIT
+	rjmp lcd_busy_loop
+	clr temp0
+	out PORTA, temp0
+	ldi temp0, PORTFDIR
+	out DDRF, temp0
+	pop temp1
+	pop temp0
 	ret
 
 LcdClear:
-	; TODO: wrap LCD_WRITE_CMD with LCD clear constant
+	rcall WaitLcdBusy
+	ldi lcd_data, LCD_CLEAR
+	LCD_WRITE_CMD lcd_data
 	ret
 
 LcdSetCursor:
-	; TODO: accept row/col in registers and compute DDRAM address
+	; expects row in workA, column in workB
+	push temp0
+	push temp1
+	mov temp0, workA
+	clr temp1
+	cpi temp0, 0
+	brne set_second_row
+	rjmp cursor_addr
+set_second_row:
+	ldi temp1, SEC_DISPLAY_ADD
+cursor_addr:
+	add temp1, workB
+	ori temp1, LCD_SET_ADD
+	rcall WaitLcdBusy
+	mov lcd_data, temp1
+	LCD_WRITE_CMD lcd_data
+	pop temp1
+	pop temp0
 	ret
 
 LcdWriteBuffer:
-	; TODO: push contents of LCDLine0/LCDLine1 to display
+	push temp0
+	push temp1
+	push workA
+	push workB
+	push YH
+	push YL
+
+	; Line 0
+	ldi workA, 0
+	ldi workB, 0
+	rcall LcdSetCursor
+	ldi YL, low(LCDLine0)
+	ldi YH, high(LCDLine0)
+	ldi temp0, LCD_COLS
+write_line0_loop:
+	ld lcd_data, Y+
+	rcall WaitLcdBusy
+	LCD_WRITE_DATA lcd_data
+	dec temp0
+	brne write_line0_loop
+
+	; Line 1
+	ldi workA, 1
+	ldi workB, 0
+	rcall LcdSetCursor
+	ldi YL, low(LCDLine1)
+	ldi YH, high(LCDLine1)
+	ldi temp0, LCD_COLS
+write_line1_loop:
+	ld lcd_data, Y+
+	rcall WaitLcdBusy
+	LCD_WRITE_DATA lcd_data
+	dec temp0
+	brne write_line1_loop
+
+	pop YL
+	pop YH
+	pop workB
+	pop workA
+	pop temp1
+	pop temp0
 	ret
 
 ; Numeric/text formatting helpers for Figure 4 rendering
@@ -298,20 +552,105 @@ LcdWriteBuffer:
 
 ; ----- Keypad helper routines -------------------------------------------------
 ScanKeypad:
-	; TODO: drive columns sequentially and read rows
+	ldi workA, INIT_COL_MASK
+	clr workB                 ; column index
+	ldi workF, 0xFF           ; assume no key
+	sts PORTL, workA
+scan_column_loop:
+	cpi workB, 4
+	breq scan_done
+	sts PORTL, workA
+	ldi temp7, KEYPAD_SETTLE_LO
+	ldi temp8, KEYPAD_SETTLE_HI
+	delay
+	lds workC, PINL
+	andi workC, ROWMASK
+	cpi workC, ROWMASK
+	breq next_column
+	clr workD                 ; row index
+scan_row_loop:
+	sbrs workC, 0
+	rjmp key_identified
+	inc workD
+	lsr workC
+	rjmp scan_row_loop
+key_identified:
+	mov workE, workD
+	mov workF, workB
+	rjmp scan_exit
+next_column:
+	lsl workA
+	inc workB
+	rjmp scan_column_loop
+scan_done:
+	ldi workF, 0xFF
+scan_exit:
+	ldi temp0, INIT_COL_MASK
+	sts PORTL, temp0
 	ret
 
 DecodeKey:
-	; TODO: translate matrix code into symbolic key (digits, Ua/Da/etc.)
+	cpi workF, 0xFF
+	breq no_key_pressed
+	cpi workF, 3
+	breq no_key_pressed      ; ignore letter column for now
+	cpi workE, 3
+	breq keypad_symbols
+	mov workG, workE
+	lsl workG
+	add workG, workE
+	add workG, workF
+	subi workG, -'1'
+	rjmp decoded
+keypad_symbols:
+	cpi workF, 0
+	breq symbol_star
+	cpi workF, 1
+	breq symbol_zero
+	cpi workF, 2
+	breq symbol_pound
+	rjmp no_key_pressed
+symbol_star:
+	ldi workG, '*'
+	rjmp decoded
+symbol_zero:
+	ldi workG, '0'
+	rjmp decoded
+symbol_pound:
+	ldi workG, '#'
+	rjmp decoded
+no_key_pressed:
+	clr workG
+decoded:
 	ret
 
 LatchKeyEvent:
-	; TODO: debounce and store into KeypadSnapshot
+	push temp0
+	push temp1
+	mov temp0, workG
+	lds temp1, KeypadHold
+	cp temp0, temp1
+	brne latch_change
+	clr temp0
+	sts KeypadSnapshot, temp0
+	rjmp latch_done
+latch_change:
+	sts KeypadHold, temp0
+	cpi temp0, 0
+	breq clear_event
+	sts KeypadSnapshot, temp0
+	rjmp latch_done
+clear_event:
+	clr temp0
+	sts KeypadSnapshot, temp0
+latch_done:
+	pop temp1
+	pop temp0
 	ret
 
-; ============================================================================== 
+; ==============================================================================
 ; Part 2: User configuration workflow
-; ============================================================================== 
+; ==============================================================================
 
 EnterConfigMode:
 	; TODO: invoked after reset button, gather accident location & visibility
@@ -329,9 +668,9 @@ HandlePB0PathGen:
 	; TODO: respond to PB0 press to trigger Part 3
 	ret
 
-; ============================================================================== 
+; ==============================================================================
 ; Part 3: Terrain modelling and search-path generation
-; ============================================================================== 
+; ==============================================================================
 
 BuildMountainModel:
 	; TODO: populate MountainMatrix with chosen primitive shapes
@@ -362,9 +701,9 @@ PreparePathScrollData:
 	; TODO: ensure segments fit 16 chars and wrap like Figure 4(b)
 	ret
 
-; ============================================================================== 
+; ==============================================================================
 ; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
-; ============================================================================== 
+; ==============================================================================
 
 BeginScrollPreview:
 	; TODO: executed after PB0 path generation to enter STATE_SCROLL_PATH
@@ -432,7 +771,23 @@ INT1_ISR:
 	reti
 
 TIMER0_OVF_ISR:
-	; TODO: software tick increment, keypad debounce scheduler
+	push temp0
+	push temp1
+	in temp0, SREG
+	push temp0
+	lds temp0, SystemTick
+	inc temp0
+	sts SystemTick, temp0
+	lds temp1, ScrollTimer
+	inc temp1
+	sts ScrollTimer, temp1
+	lds temp1, PlaybackTimer
+	inc temp1
+	sts PlaybackTimer, temp1
+	pop temp0
+	out SREG, temp0
+	pop temp1
+	pop temp0
 	reti
 
 TIMER2_OVF_ISR:
