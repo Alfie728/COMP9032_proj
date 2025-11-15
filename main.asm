@@ -234,7 +234,7 @@ InitStack:
 
 InitRegisters:
 	clr temp0
-	clr temp1
+    clr workA
 	clr temp2
 	clr temp3
 	clr temp4
@@ -412,10 +412,10 @@ DriveOutputs:
 	clr temp1
 	rjmp led_update
 led_on:
-	ser temp1
+    ser workA
 led_update:
-	out PORTC, temp1
-	ret
+    out PORTC, workA
+    ret
 
 ; ----- LCD helper macros ------------------------------------------------------
 .macro PUSH_CTX
