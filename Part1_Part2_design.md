@@ -165,3 +165,74 @@ Timer0 runs with `clk/64` prescaler; the spinner uses bit 7 of `ScrollTimer`. Ch
 - Implement `BuildMountainModel`, `GenerateSearchPath`, and format the path for the scroll preview.
 - Replace the “LED always on” with state‑based LED behaviour.
 
+---
+
+## TODO Checklist (Part 1 and Part 2)
+
+Part 1 — Platform Services
+- [x] Reset vector to `RESET` and inline stack pointer init (no RCALL before SP set)
+- [x] General register init (`InitRegisters`)
+- [x] I/O ports init (`InitIOPorts`) for LCD (PORTF/PORTA), LED bar (PORTC), keypad (PORTL), PB0/PB1
+- [x] Disable JTAG (two writes to `MCUCR` with `JTD` set)
+- [x] LCD driver macros (`lcd_write_com`, `lcd_write_data`, `lcd_wait_busy`)
+- [x] LCD power‑on init (`InitLCDDriver`) using lab timing
+- [x] LCD buffer streamer (`LcdWriteBuffer`)
+- [x] Keypad scan (`ScanKeypad`) and decode (`DecodeKey`)
+- [x] Key event latch (`LatchKeyEvent`)
+- [x] Timer0 overflow setup + ISR increments counters
+- [x] Foreground cooperative loop (`MainLoop`)
+- [x] Output driver: heartbeat spinner + push LCD buffers
+- [x] Final init success beacon (all LEDs briefly after `sei`)
+- [x] Bug fix: no `rcall` before SP (root cause found and fixed)
+
+Nice‑to‑haves in Part 1 (optional)
+- [ ] Add “no‑busy” LCD mode (fixed delays) for RW‑tied‑low displays
+- [ ] Debounce PB0/PB1 using ticks
+- [ ] Replace “LED always on” with state‑driven LED policy
+
+Part 2 — Application State + UI (planned)
+
+State machine scaffold
+- [ ] Implement `RunStateMachine` dispatcher
+- [ ] Implement `HandleIdleState`
+- [ ] Implement `HandleConfigState`
+- [ ] Implement `HandlePathGenState`
+- [ ] Implement `HandleScrollState`
+- [ ] Implement `HandlePlaybackState`
+- [ ] Implement `HandleDoneState`
+
+Config entry and rendering
+- [ ] Cursor‑based editing for `(AccidentX, AccidentY, Visibility)` via keypad
+- [ ] Key mapping: digits + `*`, `0`, `#` for navigation/confirm/cancel
+- [ ] Bounds/validation (0..6 for coords, 0..9 for visibility)
+- [ ] `UpdateLCDForConfig`: render “loc:(x,y)” + “visib: d”
+
+Path generation and formatting
+- [ ] `BuildMountainModel` (map heights)
+- [ ] `ResetCoverageMap` (clear coverage & indices)
+- [ ] `GenerateSearchPath` loop using visibility metric
+- [ ] `FindNextObservation` (evaluate best next point)
+- [ ] `UpdateCoverageForPoint` to mark visible cells
+- [ ] `StoreObservationPoint` (push x,y,z into buffer)
+- [ ] `PreparePathScrollData` (format “x,y,z / …”)
+- [ ] `UpdateLCDForScroll` to copy formatted list into `LCDLine0`
+- [ ] `AdvanceScrollWindow` (timer‑driven)
+
+Playback and final status
+- [ ] `BeginScrollPreview` (enter scroll state after PB0)
+- [ ] `BeginPlaybackRun` (seed timers/index on PB1)
+- [ ] `AdvancePlaybackStep` (tick‑driven stepping)
+- [ ] `UpdateLCDForPlayback` (highlight current point; line2 “P 61 2”)
+- [ ] `HandleDoneState` (final display with accident flag)
+
+Formatting helpers
+- [ ] `FORMAT_TWO_DIGIT` macro (00..99 or space/zero policy)
+- [ ] `WRITE_COORD_TRIPLE` macro (“x,y,z”)
+
+Input bindings (buttons)
+- [ ] PB0 → Generate path (to `STATE_PATH_GEN`)
+- [ ] PB1 → Start playback (to `STATE_PLAYBACK`)
+
+Helpful debug crumbs (optional while building Part 2)
+- [ ] Key echo on LCD line 1 (copy `KeypadSnapshot` → `LCDLine1[0]`)
+- [ ] LED policy by state: off in idle, blink in scroll, on in playback
