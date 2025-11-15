@@ -245,7 +245,11 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 ; ------------------------------------------------------------------------------
 RESET:
     cli
-    rcall InitStack
+    ; IMPORTANT: set stack before any rcall/ret
+    ldi workA, high(RAMEND)
+    out SPH, workA
+    ldi workA, low(RAMEND)
+    out SPL, workA
     rcall Beacon1
     rcall InitRegisters
     rcall Beacon2
