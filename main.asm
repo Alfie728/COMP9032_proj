@@ -473,26 +473,35 @@ hb_store:
 ; Lab 3 style LED flash (sanity check: verifies clock + PORTC wiring)
 ; ------------------------------------------------------------------------------
 LED_Flash:
-
-	ser temp7
-	out PORTC, temp7
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
+	; Use two high registers distinct from temp7/temp8
+	; workA (r17) drives LED value, workB (r18) assists with delays
+	ser workA
+	out PORTC, workA
+	ldi workA, low(55000)
+	ldi workB, high(55000)
+	mov temp7, workA
+	mov temp8, workB
 	delay
-	clr temp7
-	out PORTC, temp7
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
+	clr workA
+	out PORTC, workA
+	ldi workA, low(55000)
+	ldi workB, high(55000)
+	mov temp7, workA
+	mov temp8, workB
 	delay
-	ser temp7
-	out PORTC, temp7
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
+	ser workA
+	out PORTC, workA
+	ldi workA, low(55000)
+	ldi workB, high(55000)
+	mov temp7, workA
+	mov temp8, workB
 	delay
-	clr temp7
-	out PORTC, temp7
-	ldi temp7, low(55000)
-	ldi temp8, high(55000)
+	clr workA
+	out PORTC, workA
+	ldi workA, low(55000)
+	ldi workB, high(55000)
+	mov temp7, workA
+	mov temp8, workB
 	delay
 	ret
 
