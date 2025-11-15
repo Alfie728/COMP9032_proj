@@ -478,6 +478,55 @@ led_step_loop2:
 	ret
 
 ; ------------------------------------------------------------------------------
+; Beacon routines: show progress through RESET with 1..5 blinks
+; Each blink ~200 ms on + 200 ms off
+; ------------------------------------------------------------------------------
+Beacon_delay:
+	ldi temp7, low(12000)
+	ldi temp8, high(12000)
+	delay
+	ret
+
+Beacon_blink_once:
+	; ensure DDRC as output
+	ser workB
+	out DDRC, workB
+	ser workA
+	out PORTC, workA
+	rcall Beacon_delay
+	clr workA
+	out PORTC, workA
+	rcall Beacon_delay
+	ret
+
+Beacon1:
+	rcall Beacon_blink_once
+	ret
+
+Beacon2:
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	ret
+
+Beacon3:
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	ret
+
+Beacon4:
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	rcall Beacon_blink_once
+	ret
+
+Beacon5:
+	rcall Beacon4
+	rcall Beacon_blink_once
+	ret
+
+; ------------------------------------------------------------------------------
 ; Disable JTAG so PF/PC pins are usable as GPIO (two writes sequence)
 ; ------------------------------------------------------------------------------
 DisableJTAG:
