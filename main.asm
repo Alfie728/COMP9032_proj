@@ -257,13 +257,25 @@ RESET:
     rcall Beacon3
     rcall DisableJTAG
     rcall Beacon4
+    rcall InitLCDDriver
+    rcall Beacon5
+    rcall InitKeypad
+    rcall Beacon6
+    rcall InitTimers
+    rcall Beacon7
+    rcall InitStateMachine
+    rcall Beacon8
+    sei
+    rcall Beacon9
     rjmp MainLoop
 
 ; ------------------------------------------------------------------------------
 ; Main cooperative scheduler
 ; ------------------------------------------------------------------------------
 MainLoop:
-    rcall LED_Flash
+    rcall SampleInputs        ; read buttons/keypad, update snapshots
+    rcall RunStateMachine     ; central dispatcher using DroneState (stubbed)
+    rcall DriveOutputs        ; LCD heartbeat + LED bar
     rjmp MainLoop
 
 ; ==============================================================================
@@ -447,18 +459,25 @@ SampleInputs:
 	ret
 
 DriveOutputs:
-	; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
-	lds workB, ScrollTimer
-	sbrs workB, 7
-	rjmp hb_minus
-	ldi workC, '|'
-	rjmp hb_store
+		; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
+		lds workB, ScrollTimer
+		sbrs workB, 7
+		rjmp hb_minus
+		ldi workC, '|'
+		rjmp hb_store
 hb_minus:
-	ldi workC, '-'
+		ldi workC, '-'
 hb_store:
-    sts LCDLine0, workC
-    ; LED-only bring-up: comment out LCD writes and LED state logic
-    ret
+	    sts LCDLine0, workC
+
+	    ; Push LCD buffers to the display
+		rcall LcdWriteBuffer
+
+	    ; Keep LEDs on as an additional sanity indicator
+	    ser workA
+	    out DDRC, workA
+	    out PORTC, workA
+	    ret
 
 ; ------------------------------------------------------------------------------
 ; LED flash routine (Lab 3 style). One on/off cycle per call.
@@ -552,6 +571,50 @@ Beacon5:
     ser workB
     out DDRC, workB
     ldi workA, 0x10
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
+
+Beacon6:
+    ; show PC5
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x20
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
+
+Beacon7:
+    ; show PC6
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x40
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
+
+Beacon8:
+    ; show PC7
+    ser workB
+    out DDRC, workB
+    ldi workA, 0x80
+    out PORTC, workA
+    rcall Beacon_delay
+    clr workA
+    out PORTC, workA
+    ret
+
+Beacon9:
+    ; show ALL LEDs briefly after enabling interrupts
+    ser workB
+    out DDRC, workB
+    ser workA
     out PORTC, workA
     rcall Beacon_delay
     clr workA
