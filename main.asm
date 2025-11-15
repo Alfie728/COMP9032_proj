@@ -247,6 +247,8 @@ RESET:
 	rcall InitStack
 	rcall InitRegisters
 	rcall InitIOPorts
+	; LED sanity check identical to Lab3 LED_flash
+	rcall LED_Flash
 	rcall InitLCDDriver
 	rcall InitKeypad
 	rcall InitTimers
@@ -353,6 +355,11 @@ InitLCDDriver:
 	lcd_wait_busy
 	ldi data, LCD_DISPLAY | (1 << LCD_D) | (0 << LCD_C)
 	lcd_write_com
+
+	; Sanity: write a visible character to DDRAM
+	lcd_wait_busy
+	ldi data, '('
+	lcd_write_data
 	ret
 
 InitKeypad:
@@ -444,27 +451,49 @@ SampleInputs:
 	ret
 
 DriveOutputs:
-	; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
-	lds workB, ScrollTimer
-	sbrs workB, 7
-	rjmp hb_minus
-	ldi workC, '|'
-	rjmp hb_store
+    ; Force LEDs on as a hardware sanity check
+    ser workA
+    out PORTC, workA
+
+    ; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
+    lds workB, ScrollTimer
+    sbrs workB, 7
+    rjmp hb_minus
+    ldi workC, '|'
+    rjmp hb_store
 hb_minus:
-	ldi workC, '-'
+    ldi workC, '-'
 hb_store:
-	sts LCDLine0, workC
+    sts LCDLine0, workC
 
 	rcall LcdWriteBuffer
-	lds temp0, DroneState
-	tst temp0
-	brne led_on
-	clr workA
-	rjmp led_update
-led_on:
-	ser workA
-led_update:
-	out PORTC, workA
+	ret
+
+; ------------------------------------------------------------------------------
+; Lab 3 style LED flash (sanity check: verifies clock + PORTC wiring)
+; ------------------------------------------------------------------------------
+LED_Flash:
+
+	ser temp7
+	out PORTC, temp7
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
+	clr temp7
+	out PORTC, temp7
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
+	ser temp7
+	out PORTC, temp7
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
+	clr temp7
+	out PORTC, temp7
+	ldi temp7, low(55000)
+	ldi temp8, high(55000)
+	delay
 	ret
 
 ; ----- LCD helper macros ------------------------------------------------------
