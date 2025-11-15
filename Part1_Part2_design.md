@@ -39,7 +39,6 @@ Initialisation order in `RESET` (see `Proj/main.asm:246`):
 - Set `SPH/SPL <- RAMEND` inline (no RCALL)
 - `InitRegisters` — clear caller‑saved registers
 - `InitIOPorts` — LCD (PORTF/PORTA), LED bar (PORTC), keypad (PORTL), PB0/PB1
-- `DisableJTAG` — two writes to `MCUCR` with `JTD` set; frees PF/PC pins on boards that ship JTAG‑enabled
 - `InitLCDDriver` — lab‑compatible LCD power‑on sequence/macros
 - `InitKeypad` — prepare row/column lines
 - `InitTimers` — Timer0 overflow for timekeeping
