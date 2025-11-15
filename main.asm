@@ -25,6 +25,7 @@
 .def temp12     = r14
 .def temp13     = r15
 .def lcd_data   = r16
+.def data       = lcd_data
 .def workA      = r17
 .def workB      = r18
 .def workC      = r19
@@ -167,6 +168,64 @@ loop2:
 	delay
 .endmacro
 
+; Lab-style LCD macros (exact timing/flow)
+.macro lcd_write_com
+	out PORTF, data
+	ldi temp7, (0 << LCD_RS)|(0 << LCD_RW)
+	out PORTA, temp7
+	ldi temp7, low(100)
+	ldi temp8, high(100)
+	delay
+	sbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+	cbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+.endmacro
+
+.macro lcd_write_data
+	out PORTF, data
+	ldi temp7, (1 << LCD_RS)|(0 << LCD_RW)
+	out PORTA, temp7
+	ldi temp7, low(100)
+	ldi temp8, high(100)
+	delay
+	sbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+	cbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+.endmacro
+
+.macro lcd_wait_busy
+	clr temp7
+	out DDRF, temp7
+	ldi temp7, (0 << LCD_RS)|(1 << LCD_RW)
+	out PORTA, temp7
+busy_loop:
+	ldi temp7, low(100)
+	ldi temp8, high(100)
+	delay
+	sbi PORTA, LCD_E
+	ldi temp7, low(300)
+	ldi temp8, high(300)
+	delay
+	in temp7, PINF
+	cbi PORTA, LCD_E
+	sbrc temp7, 7
+	rjmp busy_loop
+	clr temp7
+	out PORTA, temp7
+	ser temp7
+	out DDRF, temp7
+.endmacro
+
 ; ------------------------------------------------------------------------------
 ; Data memory layout
 ; ------------------------------------------------------------------------------
@@ -306,46 +365,42 @@ InitIOPorts:
 	ret
 
 InitLCDDriver:
-	; Follows Lab 3/4 power-on timing sequence
-	ldi workA, low(15000)
-	mov temp7, workA
-	ldi workA, high(15000)
-	mov temp8, workA
+	; Use exact Lab 3/4 LCD init sequence/macros
+	ldi temp7, low(15000)
+	ldi temp8, high(15000)
 	delay
 
-	ldi lcd_data, LCD_FUNC_SET | (1 << LCD_N)
-	LCD_WRITE_CMD lcd_data
-	ldi workA, low(4100)
-	mov temp7, workA
-	ldi workA, high(4100)
-	mov temp8, workA
+	ldi data, LCD_FUNC_SET | (1 << LCD_N)
+	lcd_write_com
+
+	ldi temp7, low(4100)
+	ldi temp8, high(4100)
 	delay
 
-	LCD_WRITE_CMD lcd_data
-	ldi workA, low(100)
-	mov temp7, workA
-	ldi workA, high(100)
-	mov temp8, workA
+	lcd_write_com
+
+	ldi temp7, low(100)
+	ldi temp8, high(100)
 	delay
 
-	LCD_WRITE_CMD lcd_data
-	LCD_WRITE_CMD lcd_data
+	lcd_write_com
+	lcd_write_com
 
-	rcall WaitLcdBusy
-	ldi lcd_data, LCD_DISPLAY | (0 << LCD_D)
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	ldi data, LCD_DISPLAY | (0 << LCD_D)
+	lcd_write_com
 
-	rcall WaitLcdBusy
-	ldi lcd_data, LCD_CLEAR
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	ldi data, LCD_CLEAR
+	lcd_write_com
 
-	rcall WaitLcdBusy
-	ldi lcd_data, LCD_ENTRY_SET | (1 << LCD_ID)
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	ldi data, LCD_ENTRY_SET | (1 << LCD_ID)
+	lcd_write_com
 
-	rcall WaitLcdBusy
-	ldi lcd_data, LCD_DISPLAY | (1 << LCD_D) | (0 << LCD_C)
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	ldi data, LCD_DISPLAY | (1 << LCD_D) | (0 << LCD_C)
+	lcd_write_com
 	ret
 
 InitKeypad:
@@ -529,9 +584,9 @@ lcd_busy_loop:
 	ret
 
 LcdClear:
-	rcall WaitLcdBusy
-	ldi lcd_data, LCD_CLEAR
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	ldi data, LCD_CLEAR
+	lcd_write_com
 	ret
 
 LcdSetCursor:
@@ -547,9 +602,9 @@ set_second_row:
 cursor_addr2:
 	add workC, workB
 	ori workC, LCD_SET_ADD
-	rcall WaitLcdBusy
-	mov lcd_data, workC
-	LCD_WRITE_CMD lcd_data
+	lcd_wait_busy
+	mov data, workC
+	lcd_write_com
 	pop workC
 	ret
 
@@ -570,9 +625,9 @@ LcdWriteBuffer:
 	ldi workC, LCD_COLS
 	mov temp0, workC
 write_line0_loop:
-	ld lcd_data, Y+
-	rcall WaitLcdBusy
-	LCD_WRITE_DATA lcd_data
+	ld data, Y+
+	lcd_wait_busy
+	lcd_write_data
 	dec temp0
 	brne write_line0_loop
 
@@ -585,9 +640,9 @@ write_line0_loop:
 	ldi workC, LCD_COLS
 	mov temp0, workC
 write_line1_loop:
-	ld lcd_data, Y+
-	rcall WaitLcdBusy
-	LCD_WRITE_DATA lcd_data
+	ld data, Y+
+	lcd_wait_busy
+	lcd_write_data
 	dec temp0
 	brne write_line1_loop
 
