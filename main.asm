@@ -17,8 +17,8 @@
 .def temp4      = r6
 .def temp5      = r7
 .def temp6      = r8
-.def temp7      = r9
-.def temp8      = r10
+.def temp7      = r26        ; use X low to allow SUBI/SBCI in delay
+.def temp8      = r27        ; use X high to allow SUBI/SBCI in delay
 .def temp9      = r11
 .def temp10     = r12
 .def temp11     = r13
@@ -104,7 +104,9 @@
 ; ------------------------------------------------------------------------------
 .macro delay
 loop1:
-	ldi temp10, 0x03
+	; ldi requires r16..r31, so load into workA then move
+	ldi workA, 0x03
+	mov temp10, workA
 loop2:
 	dec temp10
 	nop
@@ -224,10 +226,10 @@ MainLoop:
 ; ==============================================================================
 
 InitStack:
-	ldi temp0, high(RAMEND)
-	out SPH, temp0
-	ldi temp0, low(RAMEND)
-	out SPL, temp0
+	ldi workA, high(RAMEND)
+	out SPH, workA
+	ldi workA, low(RAMEND)
+	out SPL, workA
 	ret
 
 InitRegisters:
@@ -249,21 +251,21 @@ InitRegisters:
 
 InitIOPorts:
 	; Configure LCD data/control ports as outputs
-	ldi temp0, PORTFDIR
-	out DDRF, temp0
-	out DDRA, temp0
+	ldi workA, PORTFDIR
+	out DDRF, workA
+	out DDRA, workA
 
 	; LED bar on PORTC
-	ldi temp0, LED_DDR_MASK
-	out DDRC, temp0
+	ldi workA, LED_DDR_MASK
+	out DDRC, workA
 	clr temp0
 	out PORTC, temp0
 
 	; Keypad columns on PL7-4 outputs, rows on PL3-0 inputs w/ pull-ups
-	ldi temp0, PORTLDIR
-	sts DDRL, temp0
-	ldi temp0, INIT_COL_MASK
-	sts PORTL, temp0
+	ldi workA, PORTLDIR
+	sts DDRL, workA
+	ldi workA, INIT_COL_MASK
+	sts PORTL, workA
 
 	; Push buttons PB0 / PB1 as inputs with pull-ups
 	cbi DDRB, 0
@@ -274,19 +276,25 @@ InitIOPorts:
 
 InitLCDDriver:
 	; Follows Lab 3/4 power-on timing sequence
-	ldi temp7, low(15000)
-	ldi temp8, high(15000)
+	ldi workA, low(15000)
+	mov temp7, workA
+	ldi workA, high(15000)
+	mov temp8, workA
 	delay
 
 	ldi lcd_data, LCD_FUNC_SET | (1 << LCD_N)
 	LCD_WRITE_CMD lcd_data
-	ldi temp7, low(4100)
-	ldi temp8, high(4100)
+	ldi workA, low(4100)
+	mov temp7, workA
+	ldi workA, high(4100)
+	mov temp8, workA
 	delay
 
 	LCD_WRITE_CMD lcd_data
-	ldi temp7, low(100)
-	ldi temp8, high(100)
+	ldi workA, low(100)
+	mov temp7, workA
+	ldi workA, high(100)
+	mov temp8, workA
 	delay
 
 	LCD_WRITE_CMD lcd_data
@@ -310,8 +318,8 @@ InitLCDDriver:
 	ret
 
 InitKeypad:
-	ldi temp0, INIT_COL_MASK
-	sts PORTL, temp0
+	ldi workA, INIT_COL_MASK
+	sts PORTL, workA
 	clr temp0
 	sts KeypadSnapshot, temp0
 	sts KeypadHold, temp0
@@ -320,10 +328,10 @@ InitKeypad:
 InitTimers:
 	clr temp0
 	out TCCR0A, temp0
-	ldi temp0, 0x03		; clk/64 prescaler
-	out TCCR0B, temp0
-	ldi temp0, (1 << TOIE0)
-	sts TIMSK0, temp0
+	ldi workA, 0x03		; clk/64 prescaler
+	out TCCR0B, workA
+	ldi workA, (1 << TOIE0)
+	sts TIMSK0, workA
 	clr temp0
 	out TCNT0, temp0
 
@@ -357,23 +365,26 @@ InitStateMachine:
 	sts PlaybackTimer, temp0
 	sts AccidentFoundFlag, temp0
 
-	ldi temp0, DEFAULT_ALT_DM
-	sts AltitudeDm, temp0
-	ldi temp0, DEFAULT_SPEED_DMPS
-	sts SpeedDmPerS, temp0
+	ldi workA, DEFAULT_ALT_DM
+	sts AltitudeDm, workA
+	ldi workA, DEFAULT_SPEED_DMPS
+	sts SpeedDmPerS, workA
 
 	; Fill LCD buffers with spaces
 	ldi YL, low(LCDLine0)
 	ldi YH, high(LCDLine0)
-	ldi temp1, LCD_COLS
-	ldi temp2, ' '
+	ldi workA, LCD_COLS
+	mov temp1, workA
+	ldi workA, ' '
+	mov temp2, workA
 fill_line0:
 	st Y+, temp2
 	dec temp1
 	brne fill_line0
 	ldi YL, low(LCDLine1)
 	ldi YH, high(LCDLine1)
-	ldi temp1, LCD_COLS
+	ldi workA, LCD_COLS
+	mov temp1, workA
 fill_line1:
 	st Y+, temp2
 	dec temp1
@@ -387,14 +398,16 @@ SampleInputs:
 
 	in temp0, PINB
 	com temp0
-	andi temp0, (PB0_MASK | PB1_MASK)
+	mov workA, temp0
+	andi workA, (PB0_MASK | PB1_MASK)
+	mov temp0, workA
 	sts ButtonSnapshot, temp0
 	ret
 
 DriveOutputs:
 	rcall LcdWriteBuffer
 	lds temp0, DroneState
-	cpi temp0, STATE_IDLE
+	tst temp0
 	brne led_on
 	clr temp1
 	rjmp led_update
@@ -446,15 +459,19 @@ WaitLcdBusy:
 	push temp1
 	clr temp0
 	out DDRF, temp0
-	ldi temp0, (0 << LCD_RS)|(1 << LCD_RW)
-	out PORTA, temp0
+	ldi workA, (0 << LCD_RS)|(1 << LCD_RW)
+	out PORTA, workA
 lcd_busy_loop:
-	ldi temp7, low(100)
-	ldi temp8, high(100)
+	ldi workA, low(100)
+	mov temp7, workA
+	ldi workA, high(100)
+	mov temp8, workA
 	delay
 	sbi PORTA, LCD_E
-	ldi temp7, low(300)
-	ldi temp8, high(300)
+	ldi workA, low(300)
+	mov temp7, workA
+	ldi workA, high(300)
+	mov temp8, workA
 	delay
 	in temp1, PINF
 	cbi PORTA, LCD_E
@@ -462,8 +479,8 @@ lcd_busy_loop:
 	rjmp lcd_busy_loop
 	clr temp0
 	out PORTA, temp0
-	ldi temp0, PORTFDIR
-	out DDRF, temp0
+	ldi workA, PORTFDIR
+	out DDRF, workA
 	pop temp1
 	pop temp0
 	ret
@@ -476,23 +493,21 @@ LcdClear:
 
 LcdSetCursor:
 	; expects row in workA, column in workB
-	push temp0
-	push temp1
-	mov temp0, workA
-	clr temp1
-	cpi temp0, 0
+	push workC
+	mov workC, workA
+	cpi workC, 0
 	brne set_second_row
-	rjmp cursor_addr
+	ldi workC, 0
+	rjmp cursor_addr2
 set_second_row:
-	ldi temp1, SEC_DISPLAY_ADD
-cursor_addr:
-	add temp1, workB
-	ori temp1, LCD_SET_ADD
+	ldi workC, SEC_DISPLAY_ADD
+cursor_addr2:
+	add workC, workB
+	ori workC, LCD_SET_ADD
 	rcall WaitLcdBusy
-	mov lcd_data, temp1
+	mov lcd_data, workC
 	LCD_WRITE_CMD lcd_data
-	pop temp1
-	pop temp0
+	pop workC
 	ret
 
 LcdWriteBuffer:
@@ -509,7 +524,8 @@ LcdWriteBuffer:
 	rcall LcdSetCursor
 	ldi YL, low(LCDLine0)
 	ldi YH, high(LCDLine0)
-	ldi temp0, LCD_COLS
+	ldi workC, LCD_COLS
+	mov temp0, workC
 write_line0_loop:
 	ld lcd_data, Y+
 	rcall WaitLcdBusy
@@ -523,7 +539,8 @@ write_line0_loop:
 	rcall LcdSetCursor
 	ldi YL, low(LCDLine1)
 	ldi YH, high(LCDLine1)
-	ldi temp0, LCD_COLS
+	ldi workC, LCD_COLS
+	mov temp0, workC
 write_line1_loop:
 	ld lcd_data, Y+
 	rcall WaitLcdBusy
@@ -560,8 +577,10 @@ scan_column_loop:
 	cpi workB, 4
 	breq scan_done
 	sts PORTL, workA
-	ldi temp7, KEYPAD_SETTLE_LO
-	ldi temp8, KEYPAD_SETTLE_HI
+	ldi workC, KEYPAD_SETTLE_LO
+	mov temp7, workC
+	ldi workC, KEYPAD_SETTLE_HI
+	mov temp8, workC
 	delay
 	lds workC, PINL
 	andi workC, ROWMASK
@@ -585,8 +604,8 @@ next_column:
 scan_done:
 	ldi workF, 0xFF
 scan_exit:
-	ldi temp0, INIT_COL_MASK
-	sts PORTL, temp0
+	ldi workC, INIT_COL_MASK
+	sts PORTL, workC
 	ret
 
 DecodeKey:
@@ -636,7 +655,7 @@ LatchKeyEvent:
 	rjmp latch_done
 latch_change:
 	sts KeypadHold, temp0
-	cpi temp0, 0
+	tst temp0
 	breq clear_event
 	sts KeypadSnapshot, temp0
 	rjmp latch_done
