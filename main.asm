@@ -830,8 +830,24 @@ BeginPlaybackRun:
 	ret
 
 RunStateMachine:
-	; TODO: branch on DroneState and call config/path/playback handlers
-	ret
+    ; Minimal dispatcher for S2: auto-enter CONFIG after IDLE
+    lds temp0, DroneState
+    cpi temp0, STATE_IDLE
+    brne rs_not_idle
+    ; transition to CONFIG once
+    ldi workA, STATE_CONFIG
+    sts DroneState, workA
+    rcall S2_BeaconTag
+    rcall UpdateLCDForConfig
+    ret
+rs_not_idle:
+    cpi temp0, STATE_CONFIG
+    breq rs_in_config
+    ; other states are TODO
+    ret
+rs_in_config:
+    ; For S2, nothing to do per tick yet (handlers will update later)
+    ret
 
 HandleIdleState:
 	; TODO: wait for reset input, clear LCD, display prompt
@@ -867,8 +883,96 @@ AdvancePlaybackStep:
 	ret
 
 UpdateLCDForConfig:
-	; TODO: write pre-search info lines (loc/visib) to LCDLine buffers
-	ret
+    ; S2: render two lines: "loc:(x,y)" and "visib: d"
+    ; Fill both lines with spaces
+    ldi YL, low(LCDLine0)
+    ldi YH, high(LCDLine0)
+    ldi workA, LCD_COLS
+    ldi workB, ' '
+ulc_fill0:
+    st Y+, workB
+    dec workA
+    brne ulc_fill0
+    ldi YL, low(LCDLine1)
+    ldi YH, high(LCDLine1)
+    ldi workA, LCD_COLS
+ulc_fill1:
+    st Y+, workB
+    dec workA
+    brne ulc_fill1
+    ; Build line 0: loc:(x,y)
+    ldi workC, 'l'
+    sts LCDLine0+0, workC
+    ldi workC, 'o'
+    sts LCDLine0+1, workC
+    ldi workC, 'c'
+    sts LCDLine0+2, workC
+    ldi workC, ':'
+    sts LCDLine0+3, workC
+    ldi workC, '('
+    sts LCDLine0+4, workC
+    ; numbers -> ASCII
+    ldi workC, '0'
+    lds workD, AccidentX
+    add workD, workC
+    sts LCDLine0+5, workD
+    ldi workD, ','
+    sts LCDLine0+6, workD
+    lds workD, AccidentY
+    add workD, workC
+    sts LCDLine0+7, workD
+    ldi workD, ')'
+    sts LCDLine0+8, workD
+    ; Build line 1: visib: d
+    ldi workC, 'v'
+    sts LCDLine1+0, workC
+    ldi workC, 'i'
+    sts LCDLine1+1, workC
+    ldi workC, 's'
+    sts LCDLine1+2, workC
+    ldi workC, 'i'
+    sts LCDLine1+3, workC
+    ldi workC, 'b'
+    sts LCDLine1+4, workC
+    ldi workC, ':'
+    sts LCDLine1+5, workC
+    ldi workC, ' '
+    sts LCDLine1+6, workC
+    ; visibility digit
+    ldi workC, '0'
+    lds workD, Visibility
+    add workD, workC
+    sts LCDLine1+7, workD
+    ret
+
+S2_BeaconTag:
+    ; Stamp S2 once at LCD tail and (optionally) flash LED bit 1
+    lds workB, StageFlags
+    sbrs workB, 1
+    rjmp s2_do
+    rjmp s2_done
+s2_do:
+    ori workB, 0x02
+    sts StageFlags, workB
+    ldi workC, 'S'
+    sts LCDLine1+13, workC
+    ldi workC, '2'
+    sts LCDLine1+14, workC
+    ; quick LED blip on PC1 (may be masked by always-on policy later)
+    ; ensure DDRC out
+    ser workA
+    out DDRC, workA
+    ; set bit1 momentarily
+    in temp0, PORTC
+    ori temp0, 0x02
+    out PORTC, temp0
+    ; brief delay
+    ldi temp7, low(10000)
+    ldi temp8, high(10000)
+    delay
+    ; restore (leave LEDs on policy to DriveOutputs)
+    s2_done:
+    ret
 
 UpdateLCDForScroll:
 	; TODO: convert ObservationPath into slash-separated ASCII chunk

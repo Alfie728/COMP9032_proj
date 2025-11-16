@@ -252,8 +252,9 @@ State machine scaffold
 - [ ] Implement `HandlePlaybackState`
 - [ ] Implement `HandleDoneState`
 
-Stage beacons and incremental bring‑up
+- Stage beacons and incremental bring‑up
 - [x] S1 Key echo baseline — show last key at `LCDLine1[0]`; flash PC0; tag `S1` (implemented in SampleInputs/DriveOutputs)
+- [x] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; tag `S2` (implemented: RunStateMachine transition + UpdateLCDForConfig)
 - [ ] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; flash PC1; tag `S2`
 - [ ] S3 Cursor + editing — digits edit `(x,y,d)`; confirm with `*`/`#`; flash PC2; tag `S3`
 - [ ] S4 Generate path (skeleton) — minimal `ObservationPath`; flash PC3; tag `S4`
