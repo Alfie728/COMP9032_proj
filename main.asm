@@ -1587,9 +1587,17 @@ UpdateLCDForScroll:
 		ldi workA, LCD_COLS
 		ldi workB, ' '
 uls_fill:
-		st Y+, workB
-		dec workA
-		brne uls_fill
+			st Y+, workB
+			dec workA
+			brne uls_fill
+			; clear line 1 during scroll preview
+			ldi YL, low(LCDLine1)
+			ldi YH, high(LCDLine1)
+			ldi workA, LCD_COLS
+uls_fill1:
+			st Y+, workB
+			dec workA
+			brne uls_fill1
 		; load first two points from ObservationPath
 		ldi YL, low(ObservationPath)
 		ldi YH, high(ObservationPath)
