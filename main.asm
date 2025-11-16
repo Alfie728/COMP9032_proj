@@ -961,39 +961,36 @@ vis_underscore:
     ldi workC, '_'
     sts LCDLine1+7, workC
 after_vis:
-    ; If all three fields set (bits 0..2), echo "x , y , d" at line1[8..14]
+    ; If all three fields set (bits 0..2), echo with left padding on line 1
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
     brne no_cfg_echo
-    ; X
+    ; Add extra left padding: keep [8..9] as spaces, write "x y d" at [10..14]
+    ldi workE, ' '
+    sts LCDLine1+8, workE
+    sts LCDLine1+9, workE
+    ; X at [10]
     ldi workC, '0'
     lds workE, AccidentX
     add workE, workC
-    sts LCDLine1+8, workE
-    ; space-comma-space
-    ldi workE, ' '
-    sts LCDLine1+9, workE
-    ldi workE, ','
     sts LCDLine1+10, workE
+    ; space at [11]
     ldi workE, ' '
     sts LCDLine1+11, workE
-    ; Y
+    ; Y at [12]
     lds workE, AccidentY
     ldi workC, '0'
     add workE, workC
     sts LCDLine1+12, workE
-    ; space-comma-space
+    ; space at [13]
     ldi workE, ' '
     sts LCDLine1+13, workE
-    ldi workE, ','
-    sts LCDLine1+14, workE
-    ; NOTE: we do not write a trailing space; last two columns are S2/S3 tags
-    ; Visibility (will appear before tags)
+    ; Visibility at [14]
     lds workE, Visibility
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+15, workE
+    sts LCDLine1+14, workE
 no_cfg_echo:
     ret
 
@@ -1007,9 +1004,9 @@ s2_do:
     ori workB, 0x02
     sts StageFlags, workB
     ldi workC, 'S'
-    sts LCDLine1+13, workC
+    sts LCDLine0+13, workC
     ldi workC, '2'
-    sts LCDLine1+14, workC
+    sts LCDLine0+14, workC
     ; quick LED blip on PC1 (may be masked by always-on policy later)
     ; ensure DDRC out
     ser workA
@@ -1137,9 +1134,9 @@ do_s3:
     ori workD, 0x04
     sts StageFlags, workD
     ldi workC, 'S'
-    sts LCDLine1+13, workC
+    sts LCDLine0+13, workC
     ldi workC, '3'
-    sts LCDLine1+14, workC
+    sts LCDLine0+14, workC
 cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
 cfg_ret:          ; common return
