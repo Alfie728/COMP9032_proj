@@ -1581,23 +1581,15 @@ UpdateLCDForScroll:
 		; Render first two path points as "xx,yy,zz / xx,yy" (fits 16 cols)
 		push YL
 		push YH
-		; clear line 0
-		ldi YL, low(LCDLine0)
-		ldi YH, high(LCDLine0)
-		ldi workA, LCD_COLS
-		ldi workB, ' '
+        ; clear line 1 (keep line 0 for stage stamp)
+        ldi YL, low(LCDLine1)
+        ldi YH, high(LCDLine1)
+        ldi workA, LCD_COLS
+        ldi workB, ' '
 uls_fill:
-			st Y+, workB
-			dec workA
-			brne uls_fill
-			; clear line 1 during scroll preview
-			ldi YL, low(LCDLine1)
-			ldi YH, high(LCDLine1)
-			ldi workA, LCD_COLS
-uls_fill1:
-			st Y+, workB
-			dec workA
-			brne uls_fill1
+                st Y+, workB
+                dec workA
+                brne uls_fill
 		; load first two points from ObservationPath
 		ldi YL, low(ObservationPath)
 		ldi YH, high(ObservationPath)
@@ -1618,11 +1610,11 @@ uls_x0_lt10:
 uls_x0_ones:
 		ldi workC, '0'
 		add workA, workC
-		sts LCDLine0+0, workB
-		sts LCDLine0+1, workA
+                sts LCDLine1+0, workB
+                sts LCDLine1+1, workA
 		; comma
 		ldi workA, ','
-		sts LCDLine0+2, workA
+                sts LCDLine1+2, workA
 		; y0 -> [3],[4]
 		mov workA, workD
 		cpi workA, 10
@@ -1635,11 +1627,11 @@ uls_y0_lt10:
 uls_y0_ones:
 		ldi workC, '0'
 		add workA, workC
-		sts LCDLine0+3, workB
-		sts LCDLine0+4, workA
+                sts LCDLine1+3, workB
+                sts LCDLine1+4, workA
 		; comma
 		ldi workA, ','
-		sts LCDLine0+5, workA
+                sts LCDLine1+5, workA
 		; z0 -> [6],[7]
 		mov workA, workE
 		cpi workA, 10
@@ -1652,15 +1644,15 @@ uls_z0_lt10:
 uls_z0_ones:
 		ldi workC, '0'
 		add workA, workC
-		sts LCDLine0+6, workB
-		sts LCDLine0+7, workA
+                sts LCDLine1+6, workB
+                sts LCDLine1+7, workA
 		; space, '/', space
 		ldi workA, ' '
-		sts LCDLine0+8, workA
+                sts LCDLine1+8, workA
 		ldi workA, '/'
-		sts LCDLine0+9, workA
+                sts LCDLine1+9, workA
 		ldi workA, ' '
-		sts LCDLine0+10, workA
+                sts LCDLine1+10, workA
 		; x1 -> [11],[12]
 		mov workA, workF
 		cpi workA, 10
@@ -1673,11 +1665,11 @@ uls_x1_lt10:
 uls_x1_ones:
 		ldi workC, '0'
 		add workA, workC
-		sts LCDLine0+11, workB
-		sts LCDLine0+12, workA
+                sts LCDLine1+11, workB
+                sts LCDLine1+12, workA
 		; comma
 		ldi workA, ','
-		sts LCDLine0+13, workA
+                sts LCDLine1+13, workA
 		; y1 -> [14],[15]
 		mov workA, workG
 		cpi workA, 10
@@ -1690,8 +1682,8 @@ uls_y1_lt10:
 uls_y1_ones:
 		ldi workC, '0'
 		add workA, workC
-		sts LCDLine0+14, workB
-		sts LCDLine0+15, workA
+                sts LCDLine1+14, workB
+                sts LCDLine1+15, workA
 		pop YH
 		pop YL
 		ret
