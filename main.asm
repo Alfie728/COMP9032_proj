@@ -440,8 +440,8 @@ fill_line1:
 	ret
 
 SampleInputs:
-	rcall ScanKeypad         ; returns ASCII in workG or 0 if none
-	rcall LatchKeyEvent
+    rcall ScanKeypad         ; returns ASCII in workG or 0 if none
+    rcall LatchKeyEvent
 
 	in temp0, PINB
 	com temp0
@@ -474,45 +474,20 @@ s1_set_tag:
     ldi workC, '1'
     sts LCDLine1+14, workC
 s1_skip_update:
+    ; If in CONFIG and we have a new key, process editing
+    lds workB, DroneState
+    cpi workB, STATE_CONFIG
+    brne s1_done
+    lds workA, KeypadSnapshot
+    tst workA
+    breq s1_done
+    rcall ProcessConfigKey
+s1_done:
     ret
 
 DriveOutputs:
-		; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
-		lds workB, ScrollTimer
-		sbrs workB, 7
-		rjmp hb_minus
-		ldi workC, '|'
-		rjmp hb_store
-hb_minus:
-		ldi workC, '-'
-hb_store:
-        ; Place spinner: avoid column 0 during CONFIG so "loc" is intact
-        lds workA, DroneState
-        cpi workA, STATE_CONFIG
-        breq spinner_cfg
-        sts LCDLine0, workC
-        rjmp spinner_done
-spinner_cfg:
-        sts LCDLine0+15, workC
-spinner_done:
-
-        ; S1: show last key pressed; avoid overwriting "visib:" during CONFIG
-        lds workA, LastKeyEcho
-        cpi workA, 0
-        brne s1_echo_ok
-        ldi workA, ' '
-s1_echo_ok:
-        lds workB, DroneState
-        cpi workB, STATE_CONFIG
-        breq echo_cfg
-        sts LCDLine1, workA
-        rjmp echo_done
-echo_cfg:
-        sts LCDLine1+12, workA
-echo_done:
-
-	    ; Push LCD buffers to the display
-		rcall LcdWriteBuffer
+        ; Push LCD buffers to the display (spinner and echo removed for S3)
+        rcall LcdWriteBuffer
 
 	    ; Keep LEDs on as an additional sanity indicator
 	    ser workA
@@ -903,7 +878,7 @@ AdvancePlaybackStep:
 	ret
 
 UpdateLCDForConfig:
-    ; S2: render two lines: "loc:(x,y)" and "visib: d"
+    ; S2/S3: render two lines: "loc(__, __)" and "visib: __"
     ; Fill both lines with spaces
     ldi YL, low(LCDLine0)
     ldi YH, high(LCDLine0)
@@ -920,30 +895,49 @@ ulc_fill1:
     st Y+, workB
     dec workA
     brne ulc_fill1
-    ; Build line 0: loc:(x,y)
+    ; Build line 0: loc(__, __)
     ldi workC, 'l'
     sts LCDLine0+0, workC
     ldi workC, 'o'
     sts LCDLine0+1, workC
     ldi workC, 'c'
     sts LCDLine0+2, workC
-    ldi workC, ':'
-    sts LCDLine0+3, workC
     ldi workC, '('
-    sts LCDLine0+4, workC
-    ; numbers -> ASCII
+    sts LCDLine0+3, workC
+    ; X field (underscore if not set)
+    lds workD, ConfigFlags
+    sbrs workD, 0
+    rjmp x_underscore
+    lds workE, AccidentX
     ldi workC, '0'
-    lds workD, AccidentX
-    add workD, workC
-    sts LCDLine0+5, workD
-    ldi workD, ','
-    sts LCDLine0+6, workD
-    lds workD, AccidentY
-    add workD, workC
-    sts LCDLine0+7, workD
-    ldi workD, ')'
-    sts LCDLine0+8, workD
-    ; Build line 1: visib: d
+    add workE, workC
+    sts LCDLine0+4, workE
+    rjmp after_x
+x_underscore:
+    ldi workC, '_'
+    sts LCDLine0+4, workC
+after_x:
+    ; comma + space
+    ldi workC, ','
+    sts LCDLine0+5, workC
+    ldi workC, ' '
+    sts LCDLine0+6, workC
+    ; Y field
+    lds workD, ConfigFlags
+    sbrs workD, 1
+    rjmp y_underscore
+    lds workE, AccidentY
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine0+7, workE
+    rjmp after_y
+y_underscore:
+    ldi workC, '_'
+    sts LCDLine0+7, workC
+after_y:
+    ldi workC, ')'
+    sts LCDLine0+8, workC
+    ; Build line 1: visib: __ (or digit)
     ldi workC, 'v'
     sts LCDLine1+0, workC
     ldi workC, 'i'
@@ -958,11 +952,19 @@ ulc_fill1:
     sts LCDLine1+5, workC
     ldi workC, ' '
     sts LCDLine1+6, workC
-    ; visibility digit
+    ; visibility digit or underscore
+    lds workD, ConfigFlags
+    sbrs workD, 2
+    rjmp vis_underscore
+    lds workE, Visibility
     ldi workC, '0'
-    lds workD, Visibility
-    add workD, workC
-    sts LCDLine1+7, workD
+    add workE, workC
+    sts LCDLine1+7, workE
+    rjmp after_vis
+vis_underscore:
+    ldi workC, '_'
+    sts LCDLine1+7, workC
+after_vis:
     ret
 
 S2_BeaconTag:
@@ -992,6 +994,111 @@ s2_do:
     delay
     ; restore (leave LEDs on policy to DriveOutputs)
     s2_done:
+    ret
+
+; S3: process keypad input for config editing
+ProcessConfigKey:
+    ; workA holds the ASCII key from KeypadSnapshot
+    ; '#' advances cursor; digits set current field; '*' clears current field
+    ; Cursor mapping: 0=X, 1=Y, 2=Visibility
+    cpi workA, '#'
+    breq cfg_next
+    cpi workA, '*'
+    breq cfg_clear
+    ; digits '0'..'9'
+    cpi workA, '0'
+    brlo cfg_done
+    cpi workA, '9'+1
+    brsh cfg_done
+    ; convert to numeric in workE
+    mov workE, workA
+    subi workE, '0'
+    ; fetch cursor
+    lds workB, InputCursor
+    cpi workB, 0
+    breq set_x
+    cpi workB, 1
+    breq set_y
+    ; else visibility
+set_vis:
+    ; 0..9 allowed
+    sts Visibility, workE
+    lds workD, ConfigFlags
+    ori workD, (1<<2)
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+set_y:
+    ; clamp to 0..6
+    cpi workE, 7
+    brsh cfg_done
+    sts AccidentY, workE
+    lds workD, ConfigFlags
+    ori workD, (1<<1)
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+set_x:
+    ; clamp to 0..6
+    cpi workE, 7
+    brsh cfg_done
+    sts AccidentX, workE
+    lds workD, ConfigFlags
+    ori workD, (1<<0)
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+cfg_next:
+    ; advance cursor 0->1->2 (stay at 2)
+    lds workB, InputCursor
+    inc workB
+    cpi workB, 3
+    brlo cfg_store_cursor
+    ldi workB, 2
+cfg_store_cursor:
+    sts InputCursor, workB
+    rjmp cfg_tag
+cfg_clear:
+    ; clear current field and its flag
+    lds workB, InputCursor
+    cpi workB, 0
+    breq clr_x
+    cpi workB, 1
+    breq clr_y
+    ; visibility
+    clr workE
+    sts Visibility, workE
+    lds workD, ConfigFlags
+    andi workD, 0b11111011
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+clr_y:
+    clr workE
+    sts AccidentY, workE
+    lds workD, ConfigFlags
+    andi workD, 0b11111101
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+clr_x:
+    clr workE
+    sts AccidentX, workE
+    lds workD, ConfigFlags
+    andi workD, 0b11111110
+    sts ConfigFlags, workD
+    rjmp cfg_refresh
+cfg_tag:
+    ; Stamp S3 once
+    lds workD, StageFlags
+    sbrs workD, 2
+    rjmp do_s3
+    rjmp cfg_refresh
+do_s3:
+    ori workD, 0x04
+    sts StageFlags, workD
+    ldi workC, 'S'
+    sts LCDLine1+13, workC
+    ldi workC, '3'
+    sts LCDLine1+14, workC
+cfg_refresh:
+    rcall UpdateLCDForConfig
+cfg_done:
     ret
 
 UpdateLCDForScroll:

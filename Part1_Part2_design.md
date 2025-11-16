@@ -254,9 +254,8 @@ State machine scaffold
 
 - Stage beacons and incremental bring‑up
 - [x] S1 Key echo baseline — show last key at `LCDLine1[0]`; flash PC0; tag `S1` (implemented in SampleInputs/DriveOutputs)
-- [x] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; tag `S2` (implemented: RunStateMachine transition + UpdateLCDForConfig)
-- [ ] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; flash PC1; tag `S2`
-- [ ] S3 Cursor + editing — digits edit `(x,y,d)`; confirm with `*`/`#`; flash PC2; tag `S3`
+- [x] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; flash PC1; tag `S2` (implemented)
+- [x] S3 Cursor + editing — digits edit `(x,y,d)`; confirm with `#`; clear `*`; tag `S3` (implemented)
 - [ ] S4 Generate path (skeleton) — minimal `ObservationPath`; flash PC3; tag `S4`
 - [ ] S5 Scroll preview — format and scroll list; flash PC4; tag `S5`
 - [ ] S6 Playback stepper — fixed 61/2; flash PC5; tag `S6`
@@ -264,10 +263,10 @@ State machine scaffold
 - [ ] S8 Buttons + polish — PB0/PB1 bound; flash PC7; tag `S8`
 
 Config entry and rendering
-- [ ] Cursor‑based editing for `(AccidentX, AccidentY, Visibility)` via keypad
-- [ ] Key mapping: digits + `*`, `0`, `#` for navigation/confirm/cancel
-- [ ] Bounds/validation (0..6 for coords, 0..9 for visibility)
-- [ ] `UpdateLCDForConfig`: render “loc:(x,y)” + “visib: d”
+- [x] Cursor‑based editing for `(AccidentX, AccidentY, Visibility)` via keypad
+- [x] Key mapping: digits + `#` to confirm/advance; `*` to clear
+- [x] Bounds/validation (0..6 for coords, 0..9 for visibility)
+- [x] `UpdateLCDForConfig`: render “loc(__, __)” + “visib: __”
 
 Path generation and formatting
 - [ ] `BuildMountainModel` (map heights)
