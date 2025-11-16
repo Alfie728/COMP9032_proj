@@ -440,8 +440,7 @@ fill_line1:
 	ret
 
 SampleInputs:
-	rcall ScanKeypad
-	rcall DecodeKey
+	rcall ScanKeypad         ; returns ASCII in workG or 0 if none
 	rcall LatchKeyEvent
 
 	in temp0, PINB
@@ -671,87 +670,75 @@ write_line1_done:
 .endmacro
 
 ; ----- Keypad helper routines -------------------------------------------------
+; Lab-3 style scan + decode in one routine
+; Output: workG = ASCII of key (or 0 if none)
 ScanKeypad:
-    ldi workA, INIT_COL_MASK
-    clr workB                 ; column index
-    ldi workF, 0xFF           ; assume no key
-    ; Ensure row pull-ups (low nibble) remain 1s regardless of shifts
-    mov workC, workA
-    ori workC, ROWMASK
-    sts PORTL, workC
+    ldi workC, INIT_COL_MASK   ; colmask (like lab colmask)
+    clr workB                  ; col index (0..3)
+    clr workG                  ; default: no key
 scan_column_loop:
     cpi workB, 4
-    breq scan_done
-    mov workC, workA
-    ori workC, ROWMASK        ; keep PL3..PL0 high (pull-ups enabled)
-    sts PORTL, workC
-    ldi workC, KEYPAD_SETTLE_LO
-    mov temp7, workC
-    ldi workC, KEYPAD_SETTLE_HI
-    mov temp8, workC
+    breq scan_exit_none
+    sts PORTL, workC           ; drive this column low, others high; rows pulled up
+    ldi temp7, KEYPAD_SETTLE_LO
+    ldi temp8, KEYPAD_SETTLE_HI
     delay
-	lds workC, PINL
-	andi workC, ROWMASK
-	cpi workC, ROWMASK
-	breq next_column
-	clr workD                 ; row index
-scan_row_loop:
-	sbrs workC, 0
-	rjmp key_identified
-	inc workD
-	lsr workC
-	rjmp scan_row_loop
-key_identified:
-	mov workE, workD
-	mov workF, workB
-	rjmp scan_exit
+    ; read rows
+    lds workE, PINL
+    andi workE, ROWMASK        ; keep only PL3..PL0
+    cpi workE, ROWMASK
+    breq next_column           ; all 1s => no key in this column
+    ; find row index (0..3), first 0 bit from LSB
+    clr workD
+row_loop:
+    sbrs workE, 0
+    rjmp have_row
+    inc workD
+    lsr workE
+    rjmp row_loop
+have_row:
+    ; ignore letter column 3
+    cpi workB, 3
+    breq scan_exit_none
+    ; map to ASCII
+    cpi workD, 3
+    breq sym_row
+    ; digit '1'..'9': ascii = 3*row + col + '1'
+    mov workG, workD
+    lsl workG
+    add workG, workD
+    add workG, workB
+    subi workG, -'1'
+    rjmp scan_exit
+sym_row:
+    ; row==3 => symbols: col 0 '*' , col 1 '0', col 2 '#'
+    cpi workB, 0
+    breq sym_star
+    cpi workB, 1
+    breq sym_zero
+    cpi workB, 2
+    breq sym_pound
+    rjmp scan_exit_none
+sym_star:
+    ldi workG, '*'
+    rjmp scan_exit
+sym_zero:
+    ldi workG, '0'
+    rjmp scan_exit
+sym_pound:
+    ldi workG, '#'
+    rjmp scan_exit
 next_column:
-    lsl workA
-    ori workA, ROWMASK        ; never let row nibble drop during shifts
+    lsl workC                   ; next column
     inc workB
     rjmp scan_column_loop
-scan_done:
-    ldi workF, 0xFF
+scan_exit_none:
+    clr workG
 scan_exit:
-    ldi workC, INIT_COL_MASK
-    ori workC, ROWMASK
-    sts PORTL, workC
+    ; restore columns default
+    ldi workA, INIT_COL_MASK
+    sts PORTL, workA
     ret
-
-DecodeKey:
-	cpi workF, 0xFF
-	breq no_key_pressed
-	cpi workF, 3
-	breq no_key_pressed      ; ignore letter column for now
-	cpi workE, 3
-	breq keypad_symbols
-	mov workG, workE
-	lsl workG
-	add workG, workE
-	add workG, workF
-	subi workG, -'1'
-	rjmp decoded
-keypad_symbols:
-	cpi workF, 0
-	breq symbol_star
-	cpi workF, 1
-	breq symbol_zero
-	cpi workF, 2
-	breq symbol_pound
-	rjmp no_key_pressed
-symbol_star:
-	ldi workG, '*'
-	rjmp decoded
-symbol_zero:
-	ldi workG, '0'
-	rjmp decoded
-symbol_pound:
-	ldi workG, '#'
-	rjmp decoded
-no_key_pressed:
-	clr workG
-decoded:
-	ret
 
 LatchKeyEvent:
 	push temp0
