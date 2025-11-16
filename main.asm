@@ -1062,22 +1062,16 @@ y_unders:
 after_y:
     ldi workC, ')'
     sts LCDLine0+10, workC
-    ; Build line 1: visib: __ (or digit)
+    ; Build line 1: vis: __ (two-digit slot at [4],[5])
     ldi workC, 'v'
     sts LCDLine1+0, workC
     ldi workC, 'i'
     sts LCDLine1+1, workC
     ldi workC, 's'
     sts LCDLine1+2, workC
-    ldi workC, 'i'
-    sts LCDLine1+3, workC
-    ldi workC, 'b'
-    sts LCDLine1+4, workC
     ldi workC, ':'
-    sts LCDLine1+5, workC
-    ldi workC, ' '
-    sts LCDLine1+6, workC
-    ; visibility two-digit or underscores at [7],[8]
+    sts LCDLine1+3, workC
+    ; visibility two-digit or underscores at [4],[5]
     lds workD, ConfigFlags
     sbrs workD, 2
     rjmp vis_pending
@@ -1085,16 +1079,16 @@ after_y:
     cpi workE, 10
     brlo vis_lt10
     ldi workC, '1'
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
     subi workE, 10
     rjmp vis_ones
 vis_lt10:
     ldi workC, ' '
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
 vis_ones:
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+8, workE
+    sts LCDLine1+5, workE
     rjmp after_vis
 vis_pending:
     lds workE, VEditCnt
@@ -1107,29 +1101,29 @@ vis_pending:
     cpi workE, 10
     brlo vis_two_lt10
     ldi workC, '1'
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
     subi workE, 10
     rjmp vis_two_ones
 vis_two_lt10:
     ldi workC, ' '
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
 vis_two_ones:
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+8, workE
+    sts LCDLine1+5, workE
     rjmp after_vis
 vis_one:
     ldi workC, '_'
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
     lds workE, VEditVal
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+8, workE
+    sts LCDLine1+5, workE
     rjmp after_vis
 vis_unders:
     ldi workC, '_'
-    sts LCDLine1+7, workC
-    sts LCDLine1+8, workC
+    sts LCDLine1+4, workC
+    sts LCDLine1+5, workC
 after_vis:
     ; If all three fields set (bits 0..2), echo two-digit values with spacing
     lds workD, ConfigFlags
