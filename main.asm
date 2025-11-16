@@ -1002,12 +1002,13 @@ ProcessConfigKey:
     cpi workA, '*'
     breq cfg_clear
     ; digits '0'..'9'
-    ; digit gate: reject outside '0'..'9'
+    ; digit gate: reject outside '0'..'9' (use near targets then rjmp)
     cpi workA, '0'
-    brlo reject_digit_low
+    brlo cfg_ret_dlow
     cpi workA, '9'+1
-    brsh reject_digit_high
-    ; valid digit continues below
+    brsh cfg_ret_dhi
+cfg_ret_dlow:     rjmp cfg_ret
+cfg_ret_dhi:      rjmp cfg_ret
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
@@ -1108,16 +1109,6 @@ cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
 cfg_ret:          ; common return
     ret
-
-; Local reject targets to keep short branches in range
-reject_digit_low:
-    rjmp cfg_ret
-reject_digit_high:
-    rjmp cfg_ret
-reject_y_hi:
-    rjmp cfg_ret
-reject_x_hi:
-    rjmp cfg_ret
 
 UpdateLCDForScroll:
 	; TODO: convert ObservationPath into slash-separated ASCII chunk
