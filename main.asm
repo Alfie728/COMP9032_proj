@@ -39,14 +39,14 @@
 ; ------------------------------------------------------------------------------
 ; Constants (update once assumptions are refined)
 ; ------------------------------------------------------------------------------
-.equ MAP_SIZE           = 7
-.equ MAP_CELLS          = 49
+.equ MAP_SIZE           = 15                 ; maximum grid 15x15
+.equ MAP_CELLS          = (MAP_SIZE*MAP_SIZE)
 .equ MAX_OBS_POINTS     = 16           ; supports multiple coverage groups
 .equ OBS_POINT_STRIDE   = 3            ; x, y, z (height)
 .equ PATH_BUF_BYTES     = MAX_OBS_POINTS * OBS_POINT_STRIDE
 .equ LCD_COLS           = 16
 .equ LCD_ROWS           = 2
-.equ VISIBILITY_MAX     = 9            ; displayed in two chars
+.equ VISIBILITY_MAX     = 15           ; displayed in two chars
 .equ DEFAULT_ALT_DM     = 61           ; Figure 4(c): 61 dm
 .equ DEFAULT_SPEED_DMPS = 2            ; Figure 4(c): 2 dm/s
 
@@ -1002,10 +1002,13 @@ ProcessConfigKey:
     cpi workA, '*'
     breq cfg_clear
     ; digits '0'..'9'
+    ; digit gate: reject outside '0'..'9'
     cpi workA, '0'
-    brlo cfg_ret
+    brlo cfg_not_digit
     cpi workA, '9'+1
-    brsh cfg_ret
+    brsh cfg_not_digit
+cfg_not_digit:    ; not in '0'..'9' -> ignore and return
+    rjmp cfg_ret
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
@@ -1024,18 +1027,28 @@ set_vis:
     sts ConfigFlags, workD
     rjmp cfg_refresh
 set_y:
-    ; clamp to 0..6
-    cpi workE, 7
-    brsh cfg_ret
+    ; clamp to 0..14 (grid max 15)
+    cpi workE, 15
+    brsh cfg_y_oob
+    ; ok -> store Y
+    rjmp cfg_store_y
+cfg_y_oob:        ; Y out of bounds (>6) -> reject
+    rjmp cfg_ret
+cfg_store_y:      ; store new Y and mark as set
     sts AccidentY, workE
     lds workD, ConfigFlags
     ori workD, (1<<1)
     sts ConfigFlags, workD
     rjmp cfg_refresh
 set_x:
-    ; clamp to 0..6
-    cpi workE, 7
-    brsh cfg_ret
+    ; clamp to 0..14 (grid max 15)
+    cpi workE, 15
+    brsh cfg_x_oob
+    ; ok -> store X
+    rjmp cfg_store_x
+cfg_x_oob:        ; X out of bounds (>6) -> reject
+    rjmp cfg_ret
+cfg_store_x:      ; store new X and mark as set
     sts AccidentX, workE
     lds workD, ConfigFlags
     ori workD, (1<<0)
@@ -1092,9 +1105,9 @@ do_s3:
     sts LCDLine1+13, workC
     ldi workC, '3'
     sts LCDLine1+14, workC
-cfg_refresh:
+cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
-cfg_ret:
+cfg_ret:          ; common return
     ret
 
 UpdateLCDForScroll:

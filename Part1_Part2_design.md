@@ -297,3 +297,8 @@ Input bindings (buttons)
 Helpful debug crumbs (optional while building Part 2)
 - [ ] Key echo on LCD line 1 (copy `KeypadSnapshot` → `LCDLine1[0]`)
 - [ ] LED policy by state: off in idle, blink in scroll, on in playback
+Constraints and ranges
+- Grid size: up to 15×15 (MAP_SIZE=15, MAP_CELLS=MAP_SIZE*MAP_SIZE)
+- Coordinate ranges: X,Y in 0..14 (15 cells per axis)
+- Visibility range: 0..15
+  - Current UI stores a single digit; S3 clamps to the new ranges but accepts 0..9 until multi‑digit editing is added in a later stage.
