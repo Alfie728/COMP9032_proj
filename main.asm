@@ -831,8 +831,8 @@ BeginPlaybackRun:
 
 RunStateMachine:
     ; Minimal dispatcher for S2: auto-enter CONFIG after IDLE
-    lds temp0, DroneState
-    cpi temp0, STATE_IDLE
+    lds workA, DroneState
+    cpi workA, STATE_IDLE
     brne rs_not_idle
     ; transition to CONFIG once
     ldi workA, STATE_CONFIG
@@ -841,7 +841,7 @@ RunStateMachine:
     rcall UpdateLCDForConfig
     ret
 rs_not_idle:
-    cpi temp0, STATE_CONFIG
+    cpi kA, STATE_CONFIG
     breq rs_in_config
     ; other states are TODO
     ret
@@ -963,9 +963,9 @@ s2_do:
     ser workA
     out DDRC, workA
     ; set bit1 momentarily
-    in temp0, PORTC
-    ori temp0, 0x02
-    out PORTC, temp0
+    in workA, PORTC
+    ori workA, 0x02
+    out PORTC, workA
     ; brief delay
     ldi temp7, low(10000)
     ldi temp8, high(10000)
