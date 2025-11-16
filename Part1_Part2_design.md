@@ -200,6 +200,12 @@ Stages
    - Drive `STATE_SCROLL_PATH` preview using `AdvanceScrollWindow`.
    - Flash PC4 on first entry into scroll; print `S5`.
 
+Implementation notes
+- `ScrollBuffer[64]` holds the formatted preview string: `xx,yy,zz / xx,yy,zz / ...`.
+- `PreparePathScrollData` builds the buffer from `ObservationPath`, stores `ScrollTextLen` and resets `ScrollHead`.
+- `AdvanceScrollWindow` steps `ScrollHead` when bit 4 of `ScrollTimer` toggles (smooth, timer‑paced scroll).
+- `UpdateLCDForScroll` copies a 16‑char window starting at `ScrollHead` to `LCDLine1`, wrapping at `ScrollTextLen`; line 0 only shows the stage tag (`S4`).
+
 6) S6 — Playback stepper
    - Implement `BeginPlaybackRun`, `AdvancePlaybackStep`, `UpdateLCDForPlayback`.
    - Use fixed altitude/speed (61/2) as per Part 2 scope.

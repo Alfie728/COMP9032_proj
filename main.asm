@@ -98,7 +98,9 @@
 
 ; Timing constants
 .equ TICK_10MS          = 100          ; placeholder for software timer loops
-.equ SCROLL_PERIOD      = 5            ; number of ticks between LCD scrolls
+.equ SCROLL_PERIOD      = 5            ; number of ticks between LCD scrolls (unused, legacy)
+.equ SCROLL_BUF_SIZE    = 64           ; bytes of formatted scroll text
+.equ SCROLL_STEP_BIT    = 6            ; use bit6 of ScrollTimer to pace scrolling (~7.6 Hz)
 
 ;-------------------------------------------------------------------------------
 ; Macro Definition
@@ -287,6 +289,9 @@ ObservationPath:       .byte PATH_BUF_BYTES
 PathLength:            .byte 1          ; number of stored observation points
 PathIndex:             .byte 1          ; active observation point
 ScrollHead:            .byte 1          ; LCD scroll pointer into path buffer
+ScrollPhase:           .byte 1          ; last observed ScrollTimer phase bit
+ScrollTextLen:         .byte 1          ; length of formatted scroll string
+ScrollBuffer:          .byte SCROLL_BUF_SIZE
 QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
@@ -485,7 +490,9 @@ InitStateMachine:
 	sts ConfigFlags, temp0
 	sts PathLength, temp0
 	sts PathIndex, temp0
-	sts ScrollHead, temp0
+    sts ScrollHead, temp0
+    sts ScrollPhase, temp0
+    sts ScrollTextLen, temp0
 	sts QueueHead, temp0
 	sts QueueTail, temp0
 	sts DroneState, temp0
@@ -923,6 +930,7 @@ HandleConfigState:
 hc_do_s4:
     rcall ResetCoverageMap
     rcall GenerateSearchPath
+    rcall PreparePathScrollData
     lds workA, PathLength
     cpi workA, 0
     breq hc_check_pb0
@@ -949,6 +957,7 @@ HandlePathGenState:
 		; S4: reset coverage and build a trivial non-empty path
 		rcall ResetCoverageMap
 		rcall GenerateSearchPath
+		rcall PreparePathScrollData
 		; if PathLength > 0, set S4 flag and move to scroll
 		lds workA, PathLength
 		cpi workA, 0
@@ -977,7 +986,41 @@ HandleDoneState:
 	ret
 
 AdvanceScrollWindow:
-	; TODO: use ScrollTimer to shift ScrollHead and rebuild LCDLine0
+	; Advance ScrollHead when ScrollTimer bit toggles
+	push workA
+	push workB
+	push workC
+	; derive current phase bit
+	lds workA, ScrollTimer
+	ldi workB, (1 << SCROLL_STEP_BIT)
+	and workB, workA
+	breq asw_phase0
+	ldi workC, 1
+	rjmp asw_phase_done
+asw_phase0:
+	clr workC
+asw_phase_done:
+	lds workA, ScrollPhase
+	cp workA, workC
+	breq asw_done          ; no change -> no step
+	; phase changed -> remember and step
+	sts ScrollPhase, workC
+	; guard empty scroll text
+	lds workA, ScrollTextLen
+	tst workA
+	breq asw_done
+	; head = (head+1) % len
+	lds workB, ScrollHead
+	inc workB
+	cp workB, workA
+	brlo asw_store
+	clr workB
+asw_store:
+	sts ScrollHead, workB
+asw_done:
+	pop workC
+	pop workB
+	pop workA
 	ret
 
 AdvancePlaybackStep:
@@ -1570,166 +1613,234 @@ StoreObservationPoint:
 	ret
 
 PreparePathScrollData:
-	; TODO: format buffer for LCD scrolling (line 0) "0,0,0 / 3,3,6 / ..."
-	; TODO: ensure segments fit 16 chars and wrap like Figure 4(b)
+	; Format ObservationPath into ScrollBuffer as "xx,yy,zz / xx,yy,zz / ..."
+	; Values are two chars each with leading space for <10
+	push YL
+	push YH
+	push XL
+	push XH
+	push workA
+	push workB
+	push workC
+	push workD
+	push workE
+	push workF
+	push workG
+	; clear buffer with spaces
+	ldi YL, low(ScrollBuffer)
+	ldi YH, high(ScrollBuffer)
+	ldi workA, SCROLL_BUF_SIZE
+	ldi workB, ' '
+pps_fill:
+	st Y+, workB
+	dec workA
+	brne pps_fill
+	; prepare pointers
+	ldi YL, low(ScrollBuffer)
+	ldi YH, high(ScrollBuffer)
+	ldi XL, low(ObservationPath)
+	ldi XH, high(ObservationPath)
+	; len = PathLength
+	lds workG, PathLength
+	clr workF               ; i = 0
+	clr workE               ; written = 0
+pps_point_loop:
+	cp workF, workG
+	breq pps_done_points
+	; load x,y,z for this point
+	ld workA, X+    ; x
+	ld workB, X+    ; y
+	ld workC, X+    ; z
+	; write two-digit x
+	mov workD, workA
+	ldi workA, ' '
+	cpi workD, 10
+	brlo pps_x_tens_set
+	ldi workA, '1'
+	subi workD, 10
+pps_x_tens_set:
+	st Y+, workA
+	ldi workA, '0'
+	add workD, workA
+	st Y+, workD
+	adiw YL, 0
+	; comma
+	ldi workA, ','
+	st Y+, workA
+	; write two-digit y
+	mov workD, workB
+	ldi workA, ' '
+	cpi workD, 10
+	brlo pps_y_tens_set
+	ldi workA, '1'
+	subi workD, 10
+pps_y_tens_set:
+	st Y+, workA
+	ldi workA, '0'
+	add workD, workA
+	st Y+, workD
+	; comma
+	ldi workA, ','
+	st Y+, workA
+	; write two-digit z
+	mov workD, workC
+	ldi workA, ' '
+	cpi workD, 10
+	brlo pps_z_tens_set
+	ldi workA, '1'
+	subi workD, 10
+pps_z_tens_set:
+	st Y+, workA
+	ldi workA, '0'
+	add workD, workA
+	st Y+, workD
+	; space, '/', space
+	ldi workA, ' '
+	st Y+, workA
+	ldi workA, '/'
+	st Y+, workA
+	ldi workA, ' '
+	st Y+, workA
+	; written += 2+1+2+1+2+3 = 11
+	ldi workA, 11
+	add workE, workA
+	; next point
+	inc workF
+	rjmp pps_point_loop
+
+pps_done_points:
+	; length = min(written, SCROLL_BUF_SIZE)
+	ldi workA, SCROLL_BUF_SIZE
+	cp workE, workA
+	brlo pps_len_store
+	mov workE, workA
+pps_len_store:
+	sts ScrollTextLen, workE
+	clr workA
+	sts ScrollHead, workA
+	pop workG
+	pop workF
+	pop workE
+	pop workD
+	pop workC
+	pop workB
+	pop workA
+	pop XH
+	pop XL
+	pop YH
+	pop YL
 	ret
 
 ; =============================================================================
 ; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
 ; =============================================================================
 UpdateLCDForScroll:
-		; Render first two path points as "xx,yy,zz / xx,yy" (fits 16 cols)
+		; Scroll a 16-char window across ScrollBuffer into LCDLine1
 		push YL
 		push YH
-        ; Clear BOTH lines to prevent leftover S3 text (e.g., "loc(x,y)")
-        ; line 0
-        ldi YL, low(LCDLine0)
-        ldi YH, high(LCDLine0)
-        ldi workA, LCD_COLS
-        ldi workB, ' '
+		push XL
+		push XH
+		push workA
+		push workB
+		push workC
+		push workD
+		push workE
+		; pace scrolling and update head
+		rcall AdvanceScrollWindow
+		; clear BOTH lines to prevent leftover S3 text (e.g., "loc(x,y)")
+		; line 0
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+		ldi workB, ' '
 uls_fill0:
-                st Y+, workB
-                dec workA
-                brne uls_fill0
-        ; line 1
-        ldi YL, low(LCDLine1)
-        ldi YH, high(LCDLine1)
-        ldi workA, LCD_COLS
+			st Y+, workB
+			dec workA
+			brne uls_fill0
+		; line 1
+		ldi YL, low(LCDLine1)
+		ldi YH, high(LCDLine1)
+		ldi workA, LCD_COLS
 uls_fill1:
-                st Y+, workB
-                dec workA
-                brne uls_fill1
-		; load first two points from ObservationPath
-		ldi YL, low(ObservationPath)
-		ldi YH, high(ObservationPath)
-		ld workC, Y+   ; x0
-		ld workD, Y+   ; y0
-		ld workE, Y+   ; z0
-		ld workF, Y+   ; x1
-		ld workG, Y+   ; y1
-		; x0 -> [0],[1]
-		mov workA, workC
-		cpi workA, 10
-		brlo uls_x0_lt10
-		ldi workB, '1'
-		subi workA, 10
-		rjmp uls_x0_ones
-uls_x0_lt10:
-		ldi workB, ' '
-uls_x0_ones:
-		ldi workC, '0'
-		add workA, workC
-                sts LCDLine1+0, workB
-                sts LCDLine1+1, workA
-		; comma
-		ldi workA, ','
-                sts LCDLine1+2, workA
-		; y0 -> [3],[4]
-		mov workA, workD
-		cpi workA, 10
-		brlo uls_y0_lt10
-		ldi workB, '1'
-		subi workA, 10
-		rjmp uls_y0_ones
-uls_y0_lt10:
-		ldi workB, ' '
-uls_y0_ones:
-		ldi workC, '0'
-		add workA, workC
-                sts LCDLine1+3, workB
-                sts LCDLine1+4, workA
-		; comma
-		ldi workA, ','
-                sts LCDLine1+5, workA
-		; z0 -> [6],[7]
-		mov workA, workE
-		cpi workA, 10
-		brlo uls_z0_lt10
-		ldi workB, '1'
-		subi workA, 10
-		rjmp uls_z0_ones
-uls_z0_lt10:
-		ldi workB, ' '
-uls_z0_ones:
-		ldi workC, '0'
-		add workA, workC
-                sts LCDLine1+6, workB
-                sts LCDLine1+7, workA
-		; space, '/', space
-		ldi workA, ' '
-                sts LCDLine1+8, workA
-		ldi workA, '/'
-                sts LCDLine1+9, workA
-		ldi workA, ' '
-                sts LCDLine1+10, workA
-		; x1 -> [11],[12]
-		mov workA, workF
-		cpi workA, 10
-		brlo uls_x1_lt10
-		ldi workB, '1'
-		subi workA, 10
-		rjmp uls_x1_ones
-uls_x1_lt10:
-		ldi workB, ' '
-uls_x1_ones:
-		ldi workC, '0'
-		add workA, workC
-                sts LCDLine1+11, workB
-                sts LCDLine1+12, workA
-		; comma
-		ldi workA, ','
-                sts LCDLine1+13, workA
-		; y1 -> [14],[15]
-		mov workA, workG
-		cpi workA, 10
-		brlo uls_y1_lt10
-		ldi workB, '1'
-		subi workA, 10
-		rjmp uls_y1_ones
-uls_y1_lt10:
-		ldi workB, ' '
-uls_y1_ones:
-		ldi workC, '0'
-		add workA, workC
-                sts LCDLine1+14, workB
-                sts LCDLine1+15, workA
-                ; Stamp stage on line 0 end (14..15) after clearing
-                lds workD, StageFlags
-                ; S4
-                sbrs workD, 3
-                rjmp uls_stamp_s3
-                ldi workC, 'S'
-                sts LCDLine0+14, workC
-                ldi workC, '4'
-                sts LCDLine0+15, workC
-                rjmp uls_stamp_done
+			st Y+, workB
+			dec workA
+			brne uls_fill1
+		; set write pointer to start of line 1
+		ldi YL, low(LCDLine1)
+		ldi YH, high(LCDLine1)
+		; guard empty buffer
+		lds workD, ScrollTextLen
+		tst workD
+		breq uls_after_copy
+		; compute X = ScrollBuffer + ScrollHead
+		lds workE, ScrollHead
+		ldi XL, low(ScrollBuffer)
+		ldi XH, high(ScrollBuffer)
+		clr workC
+		add XL, workE
+		adc XH, workC
+		; copy 16 chars with wrap
+		ldi workA, LCD_COLS     ; count
+uls_copy_loop:
+		ld workB, X+
+		st Y+, workB
+		; advance local pos and wrap if pos == len
+		inc workE
+		cp workE, workD
+		brlo uls_copy_next
+		; wrap: pos=0, reset X to buffer start
+		clr workE
+		ldi XL, low(ScrollBuffer)
+		ldi XH, high(ScrollBuffer)
+uls_copy_next:
+		dec workA
+		brne uls_copy_loop
+
+uls_after_copy:
+		; Stamp stage on line 0 end (14..15)
+		lds workD, StageFlags
+		; S4
+		sbrs workD, 3
+		rjmp uls_stamp_s3
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '4'
+		sts LCDLine0+15, workC
+		rjmp uls_stamp_done
 uls_stamp_s3:
-                sbrs workD, 2
-                rjmp uls_stamp_s2
-                ldi workC, 'S'
-                sts LCDLine0+14, workC
-                ldi workC, '3'
-                sts LCDLine0+15, workC
-                rjmp uls_stamp_done
+		sbrs workD, 2
+		rjmp uls_stamp_s2
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '3'
+		sts LCDLine0+15, workC
+		rjmp uls_stamp_done
 uls_stamp_s2:
-                sbrs workD, 1
-                rjmp uls_stamp_s1
-                ldi workC, 'S'
-                sts LCDLine0+14, workC
-                ldi workC, '2'
-                sts LCDLine0+15, workC
-                rjmp uls_stamp_done
+		sbrs workD, 1
+		rjmp uls_stamp_s1
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '2'
+		sts LCDLine0+15, workC
+		rjmp uls_stamp_done
 uls_stamp_s1:
-                sbrs workD, 0
-                rjmp uls_stamp_done
-                ldi workC, 'S'
-                sts LCDLine0+14, workC
-                ldi workC, '1'
-                sts LCDLine0+15, workC
+		sbrs workD, 0
+		rjmp uls_stamp_done
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '1'
+		sts LCDLine0+15, workC
 uls_stamp_done:
-                pop YH
-                pop YL
-                ret
+		pop workE
+		pop workD
+		pop workC
+		pop workB
+		pop workA
+		pop XH
+		pop XL
+		pop YH
+		pop YL
+		ret
 
 UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed
