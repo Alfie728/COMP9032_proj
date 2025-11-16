@@ -928,6 +928,10 @@ hc_do_s4:
     breq hc_check_pb0
     ori workB, (1<<3)
     sts StageFlags, workB
+    ; auto-transition to scroll
+    ldi workA, STATE_SCROLL_PATH
+    sts DroneState, workA
+    ret
 hc_check_pb0:
     ; If PB0 pressed, transition to path generation state (will go to scroll)
     lds workB, ButtonSnapshot
@@ -960,8 +964,8 @@ hpg_done:
 		ret
 
 HandleScrollState:
-	; TODO: show observation list ("0,0,0 / 3,3,6 / ...") scrolling right->left
-	ret
+		rcall UpdateLCDForScroll
+		ret
 
 HandlePlaybackState:
 	; TODO: step through ObservationPath, highlight current point, display
@@ -1574,8 +1578,115 @@ PreparePathScrollData:
 ; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
 ; =============================================================================
 UpdateLCDForScroll:
-	; TODO: convert ObservationPath into slash-separated ASCII chunk
-	ret
+		; Render first two path points as "xx,yy,zz / xx,yy" (fits 16 cols)
+		push YL
+		push YH
+		; clear line 0
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+		ldi workB, ' '
+uls_fill:
+		st Y+, workB
+		dec workA
+		brne uls_fill
+		; load first two points from ObservationPath
+		ldi YL, low(ObservationPath)
+		ldi YH, high(ObservationPath)
+		ld workC, Y+   ; x0
+		ld workD, Y+   ; y0
+		ld workE, Y+   ; z0
+		ld workF, Y+   ; x1
+		ld workG, Y+   ; y1
+		; x0 -> [0],[1]
+		mov workA, workC
+		cpi workA, 10
+		brlo uls_x0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_x0_ones
+uls_x0_lt10:
+		ldi workB, ' '
+uls_x0_ones:
+		ldi workC, '0'
+		add workA, workC
+		sts LCDLine0+0, workB
+		sts LCDLine0+1, workA
+		; comma
+		ldi workA, ','
+		sts LCDLine0+2, workA
+		; y0 -> [3],[4]
+		mov workA, workD
+		cpi workA, 10
+		brlo uls_y0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_y0_ones
+uls_y0_lt10:
+		ldi workB, ' '
+uls_y0_ones:
+		ldi workC, '0'
+		add workA, workC
+		sts LCDLine0+3, workB
+		sts LCDLine0+4, workA
+		; comma
+		ldi workA, ','
+		sts LCDLine0+5, workA
+		; z0 -> [6],[7]
+		mov workA, workE
+		cpi workA, 10
+		brlo uls_z0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_z0_ones
+uls_z0_lt10:
+		ldi workB, ' '
+uls_z0_ones:
+		ldi workC, '0'
+		add workA, workC
+		sts LCDLine0+6, workB
+		sts LCDLine0+7, workA
+		; space, '/', space
+		ldi workA, ' '
+		sts LCDLine0+8, workA
+		ldi workA, '/'
+		sts LCDLine0+9, workA
+		ldi workA, ' '
+		sts LCDLine0+10, workA
+		; x1 -> [11],[12]
+		mov workA, workF
+		cpi workA, 10
+		brlo uls_x1_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_x1_ones
+uls_x1_lt10:
+		ldi workB, ' '
+uls_x1_ones:
+		ldi workC, '0'
+		add workA, workC
+		sts LCDLine0+11, workB
+		sts LCDLine0+12, workA
+		; comma
+		ldi workA, ','
+		sts LCDLine0+13, workA
+		; y1 -> [14],[15]
+		mov workA, workG
+		cpi workA, 10
+		brlo uls_y1_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_y1_ones
+uls_y1_lt10:
+		ldi workB, ' '
+uls_y1_ones:
+		ldi workC, '0'
+		add workA, workC
+		sts LCDLine0+14, workB
+		sts LCDLine0+15, workA
+		pop YH
+		pop YL
+		ret
 
 UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed
