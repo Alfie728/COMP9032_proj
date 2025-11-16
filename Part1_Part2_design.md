@@ -243,10 +243,10 @@ Nice‑to‑haves in Part 1 (optional)
 
 Part 2 — Application State + UI
 
-State machine scaffold (pending; minimal dispatcher enters CONFIG)
-- [ ] Implement `RunStateMachine` dispatcher
-- [ ] Implement `HandleIdleState`
-- [ ] Implement `HandleConfigState`
+State machine scaffold (in progress)
+- [x] Implement `RunStateMachine` dispatcher
+- [x] Implement `HandleIdleState`
+- [x] Implement `HandleConfigState`
 - [ ] Implement `HandlePathGenState`
 - [ ] Implement `HandleScrollState`
 - [ ] Implement `HandlePlaybackState`
@@ -266,8 +266,8 @@ Each stage beacon is an explicit, visible indicator that a discrete task is impl
   - Task: two‑digit live editing per field (`XEditVal/Cnt`, `YEditVal/Cnt`, `VEditVal/Cnt`); `#` confirms & clamps (X,Y: 0..14, vis: 0..15); `*` clears; echo two‑digit `x y d`
   - Visual: `S3` tag
 
-- [ ] S4 — Path generation skeleton
-  - Task: `ResetCoverageMap` + minimal `GenerateSearchPath` producing a non‑empty `ObservationPath`
+- [x] S4 — Path generation skeleton
+  - Task: `ResetCoverageMap` + minimal `GenerateSearchPath` producing a non‑empty `ObservationPath` (two points)
   - Visual: `S4` tag
 
 - [ ] S5 — Scroll preview

@@ -853,35 +853,77 @@ BeginPlaybackRun:
 	ret
 
 RunStateMachine:
-    ; Minimal dispatcher for S2: auto-enter CONFIG after IDLE
+    ; Central dispatcher by DroneState
     lds workA, DroneState
     cpi workA, STATE_IDLE
-    brne rs_not_idle
-    ; transition to CONFIG once
+    breq RS_IDLE
+    cpi workA, STATE_CONFIG
+    breq RS_CONFIG
+    cpi workA, STATE_PATH_GEN
+    breq RS_PATHGEN
+    cpi workA, STATE_SCROLL_PATH
+    breq RS_SCROLL
+    cpi workA, STATE_PLAYBACK
+    breq RS_PLAY
+    cpi workA, STATE_DONE
+    breq RS_DONE
+    ret
+RS_IDLE:
+    rcall HandleIdleState
+    ret
+RS_CONFIG:
+    rcall HandleConfigState
+    ret
+RS_PATHGEN:
+    rcall HandlePathGenState
+    ret
+RS_SCROLL:
+    rcall HandleScrollState
+    ret
+RS_PLAY:
+    rcall HandlePlaybackState
+    ret
+RS_DONE:
+    rcall HandleDoneState
+    ret
+
+HandleIdleState:
+    ; For now, auto-enter CONFIG on first tick for bring-up
     ldi workA, STATE_CONFIG
     sts DroneState, workA
     rcall UpdateLCDForConfig
     ret
-rs_not_idle:
-    cpi workA, STATE_CONFIG
-    breq rs_in_config
-    ; other states are TODO
-    ret
-rs_in_config:
-    ; For S2, nothing to do per tick yet (handlers will update later)
-    ret
-
-HandleIdleState:
-	; TODO: wait for reset input, clear LCD, display prompt
-	ret
 
 HandleConfigState:
-	; TODO: update LCD with "loc:(x,y)" and "visib: d" per Figure 4(a)
-	ret
+    ; If PB0 pressed, transition to path generation (S4)
+    lds workB, ButtonSnapshot
+    sbrs workB, 0              ; PB0 bit
+    rjmp hc_no_pb0
+    ldi workA, STATE_PATH_GEN
+    sts DroneState, workA
+    ret
+hc_no_pb0:
+    ; Ensure CONFIG screen reflects latest edits/commits
+    rcall UpdateLCDForConfig
+    ret
 
 HandlePathGenState:
-	; TODO: call GenerateSearchPath and transition to STATE_SCROLL_PATH
-	ret
+		; S4: reset coverage and build a trivial non-empty path
+		rcall ResetCoverageMap
+		rcall GenerateSearchPath
+		; if PathLength > 0, set S4 flag and move to scroll
+		lds workA, PathLength
+		cpi workA, 0
+		breq hpg_done
+		; mark S4 in StageFlags (bit3)
+		lds workB, StageFlags
+		ori workB, (1<<3)
+		sts StageFlags, workB
+		; transition to scroll state (S5 will render)
+		ldi workA, STATE_SCROLL_PATH
+		sts DroneState, workA
+hpg_done:
+		ret
 
 HandleScrollState:
 	; TODO: show observation list ("0,0,0 / 3,3,6 / ...") scrolling right->left
@@ -1025,6 +1067,15 @@ after_vis:
 no_cfg_echo:
     ; Stage stamp at end of first line (line0[14..15]): prefer highest stage set
     lds workD, StageFlags
+    ; check S4
+    sbrs workD, 3
+    rjmp stamp_check_s3
+    ldi workC, 'S'
+    sts LCDLine0+14, workC
+    ldi workC, '4'
+    sts LCDLine0+15, workC
+    rjmp stamp_done
+stamp_check_s3:
     ; check S3
     sbrs workD, 2
     rjmp stamp_check_s2
@@ -1176,11 +1227,52 @@ BuildMountainModel:
 	ret
 
 ResetCoverageMap:
-	; TODO: clear CoverageMask, PathLength, PathIndex
+	; Clear CoverageMask array and path indices
+	push YL
+	push YH
+	clr workA
+	; Clear CoverageMask[MAP_CELLS]
+	ldi YL, low(CoverageMask)
+	ldi YH, high(CoverageMask)
+	ldi workB, MAP_CELLS
+rcm_loop:
+	st Y+, workA
+	dec workB
+	brne rcm_loop
+	; Zero path meta
+	sts PathLength, workA
+	sts PathIndex, workA
+	sts ScrollHead, workA
+	pop YH
+	pop YL
 	ret
 
 GenerateSearchPath:
-	; TODO: observation planning loop based on visibility distance
+	; Build a trivial non-empty path: (X,Y,0) and (X,Y,Vis)
+	push YL
+	push YH
+	ldi YL, low(ObservationPath)
+	ldi YH, high(ObservationPath)
+	; Load current config
+	lds workC, AccidentX
+	lds workD, AccidentY
+	lds workE, Visibility
+	; Point 0: (X,Y,0)
+	st Y+, workC
+	st Y+, workD
+	clr workA
+	st Y+, workA
+	; Point 1: (X,Y,Vis)
+	st Y+, workC
+	st Y+, workD
+	st Y+, workE
+	; PathLength = 2, PathIndex=0
+	ldi workA, 2
+	sts PathLength, workA
+	clr workA
+	sts PathIndex, workA
+	pop YH
+	pop YL
 	ret
 
 FindNextObservation:
