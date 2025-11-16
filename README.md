@@ -92,16 +92,15 @@
 
 # 9. 程序结构（推荐）
 
-- main.c（主逻辑）
-- mountain.c（山脉生成）
-- visibility.c（可视范围计算）
-- searchpath.c（路径生成）
-- drone.c（无人机状态机）
-- lcd.c（LCD 模块）
-- keypad.c（按键扫描）
-- input.c（输入处理）
-- timers.c（定时器）
-- crash.c（撞击检测）
+- main.asm（主逻辑）
+- visibility.asm（可视范围计算）
+- searchpath.asm（路径生成）
+- drone.asm（无人机状态机）
+- lcd.asm（LCD 模块）
+- keypad.asm（按键扫描）
+- input.asm （输入处理）
+- timers.asm（定时器）
+- crash.asm（撞击检测）
 
 ---
 
