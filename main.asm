@@ -65,8 +65,8 @@
 .equ LED_DDR_MASK       = 0xFF
 
 ; Keypad timing
-.equ KEYPAD_SETTLE_LO   = low(3000)
-.equ KEYPAD_SETTLE_HI   = high(3000)
+.equ KEYPAD_SETTLE_LO   = low(35000)
+.equ KEYPAD_SETTLE_HI   = high(35000)
 
 ; System states
 .equ STATE_IDLE         = 0
