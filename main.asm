@@ -1131,36 +1131,53 @@ vis_unders:
     sts LCDLine1+7, workC
     sts LCDLine1+8, workC
 after_vis:
-    ; If all three fields set (bits 0..2), echo with left padding on line 1
+    ; If all three fields set (bits 0..2), echo two-digit values with spacing
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
     brne no_cfg_echo
-    ; Add extra left padding: keep [8..9] as spaces, write "x y d" at [10..14]
-    ldi workE, ' '
-    sts LCDLine1+8, workE
-    sts LCDLine1+9, workE
-    ; X at [10]
-    ldi workC, '0'
+    ; X at [8],[9]
     lds workE, AccidentX
-    add workE, workC
-    sts LCDLine1+10, workE
-    ; space at [11]
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_x_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_x_tens_done:
+    sts LCDLine1+8, workC
+    ldi workG, '0'
+    add workE, workG
+    sts LCDLine1+9, workE
+    ; space at [10]
     ldi workE, ' '
-    sts LCDLine1+11, workE
-    ; Y at [12]
+    sts LCDLine1+10, workE
+    ; Y at [11],[12]
     lds workE, AccidentY
-    ldi workC, '0'
-    add workE, workC
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_y_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_y_tens_done:
+    sts LCDLine1+11, workC
+    ldi workG, '0'
+    add workE, workG
     sts LCDLine1+12, workE
     ; space at [13]
     ldi workE, ' '
     sts LCDLine1+13, workE
-    ; Visibility at [14]
+    ; Vis at [14],[15]
     lds workE, Visibility
-    ldi workC, '0'
-    add workE, workC
-    sts LCDLine1+14, workE
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_v_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_v_tens_done:
+    sts LCDLine1+14, workC
+    ldi workG, '0'
+    add workE, workG
+    sts LCDLine1+15, workE
 no_cfg_echo:
     ; Stage stamp at end of first line (line0[14..15]): prefer highest stage set
     lds workD, StageFlags
