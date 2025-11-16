@@ -1684,9 +1684,43 @@ uls_y1_ones:
 		add workA, workC
                 sts LCDLine1+14, workB
                 sts LCDLine1+15, workA
-		pop YH
-		pop YL
-		ret
+                ; Stamp stage on line 0 end (14..15) after clearing
+                lds workD, StageFlags
+                ; S4
+                sbrs workD, 3
+                rjmp uls_stamp_s3
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '4'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s3:
+                sbrs workD, 2
+                rjmp uls_stamp_s2
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '3'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s2:
+                sbrs workD, 1
+                rjmp uls_stamp_s1
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '2'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s1:
+                sbrs workD, 0
+                rjmp uls_stamp_done
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '1'
+                sts LCDLine0+15, workC
+uls_stamp_done:
+                pop YH
+                pop YL
+                ret
 
 UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed
