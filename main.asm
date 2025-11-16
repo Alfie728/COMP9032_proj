@@ -1206,9 +1206,9 @@ ProcessConfigKey:
     rjmp cfg_ret              ; else reject
 cfg_digit_ge0:
     cpi workA, '9'+1          ; compare to ':' (one past '9')
-    brlo cfg_digit_ok         ; if < ':' then it's <= '9'
+    brlo cfg_digit_islte9     ; if < ':' then it's <= '9'
     rjmp cfg_ret              ; else reject
-cfg_digit_ok:
+cfg_digit_islte9:
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
