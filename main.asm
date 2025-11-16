@@ -458,6 +458,11 @@ SampleInputs:
     breq s1_skip_update
     sts LastKeyEcho, workA
     lds workB, StageFlags
+    ; Only stamp S1 if S2 not done (bit1==0) and S1 not yet stamped (bit0==0)
+    sbrs workB, 1
+    rjmp s1_check_b0
+    rjmp s1_skip_update
+s1_check_b0:
     sbrs workB, 0
     rjmp s1_set_tag
     rjmp s1_skip_update
@@ -481,15 +486,30 @@ DriveOutputs:
 hb_minus:
 		ldi workC, '-'
 hb_store:
-	    sts LCDLine0, workC
+        ; Place spinner: avoid column 0 during CONFIG so "loc" is intact
+        lds workA, DroneState
+        cpi workA, STATE_CONFIG
+        breq spinner_cfg
+        sts LCDLine0, workC
+        rjmp spinner_done
+spinner_cfg:
+        sts LCDLine0+15, workC
+spinner_done:
 
-	    ; S1: show last key pressed at LCD line1[0]
-	    lds workA, LastKeyEcho
-	    cpi workA, 0
-	    brne s1_echo_ok
-	    ldi workA, ' '
+        ; S1: show last key pressed; avoid overwriting "visib:" during CONFIG
+        lds workA, LastKeyEcho
+        cpi workA, 0
+        brne s1_echo_ok
+        ldi workA, ' '
 s1_echo_ok:
-	    sts LCDLine1, workA
+        lds workB, DroneState
+        cpi workB, STATE_CONFIG
+        breq echo_cfg
+        sts LCDLine1, workA
+        rjmp echo_done
+echo_cfg:
+        sts LCDLine1+12, workA
+echo_done:
 
 	    ; Push LCD buffers to the display
 		rcall LcdWriteBuffer
@@ -841,7 +861,7 @@ RunStateMachine:
     rcall UpdateLCDForConfig
     ret
 rs_not_idle:
-    cpi kA, STATE_CONFIG
+    cpi workA, STATE_CONFIG
     breq rs_in_config
     ; other states are TODO
     ret
