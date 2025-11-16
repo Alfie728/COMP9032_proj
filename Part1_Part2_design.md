@@ -264,9 +264,11 @@ State machine scaffold
 
 Config entry and rendering
 - [x] Cursor‑based editing for `(AccidentX, AccidentY, Visibility)` via keypad
-- [x] Key mapping: digits + `#` to confirm/advance; `*` to clear
-- [x] Bounds/validation (0..6 for coords, 0..9 for visibility)
-- [x] `UpdateLCDForConfig`: render “loc(__, __)” + “visib: __”
+- [x] Two‑digit live editing with per‑field buffers (`XEditVal/Cnt`, `YEditVal/Cnt`, `VEditVal/Cnt`)
+- [x] Key mapping: digits append; `#` confirm & advance; `*` clear current field
+- [x] Bounds/validation (X,Y clamp to 0..14; visibility clamp to 0..15)
+- [x] `UpdateLCDForConfig`: render two‑slot fields: `loc(__, __)` + `vis: __`; show edit vs confirmed values
+- [x] Echo confirmed values (two digits per field) on line 1 with spacing
 
 Path generation and formatting
 - [ ] `BuildMountainModel` (map heights)
@@ -301,4 +303,4 @@ Constraints and ranges
 - Grid size: up to 15×15 (MAP_SIZE=15, MAP_CELLS=MAP_SIZE*MAP_SIZE)
 - Coordinate ranges: X,Y in 0..14 (15 cells per axis)
 - Visibility range: 0..15
-  - Current UI stores a single digit; S3 clamps to the new ranges but accepts 0..9 until multi‑digit editing is added in a later stage.
+  - Live editing supports one or two digits per field; confirm commits to SRAM
