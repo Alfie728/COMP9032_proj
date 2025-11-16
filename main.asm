@@ -986,7 +986,7 @@ HandleDoneState:
 	ret
 
 AdvanceScrollWindow:
-	; Advance ScrollHead when ScrollTimer bit toggles
+	; Advance ScrollHead on rising edge of ScrollTimer bit
 	push workA
 	push workB
 	push workC
@@ -1003,8 +1003,11 @@ asw_phase_done:
 	lds workA, ScrollPhase
 	cp workA, workC
 	breq asw_done          ; no change -> no step
-	; phase changed -> remember and step
+	; phase changed -> remember
 	sts ScrollPhase, workC
+	; Only step on rising edge (phase = 1)
+	tst workC
+	breq asw_done
 	; guard empty scroll text
 	lds workA, ScrollTextLen
 	tst workA
