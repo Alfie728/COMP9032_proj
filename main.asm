@@ -542,10 +542,6 @@ s1_check_b0:
 s1_set_tag:
     ori workB, 1
     sts StageFlags, workB
-    ldi workC, 'S'
-    sts LCDLine1+13, workC
-    ldi workC, '1'
-    sts LCDLine1+14, workC
 s1_skip_update:
     ; If in CONFIG and we have a new key, process editing
     lds workB, DroneState
@@ -1027,6 +1023,32 @@ after_vis:
     add workE, workC
     sts LCDLine1+14, workE
 no_cfg_echo:
+    ; Stage stamp at end of first line (line0[14..15]): prefer highest stage set
+    lds workD, StageFlags
+    ; check S3
+    sbrs workD, 2
+    rjmp stamp_check_s2
+    ldi workC, 'S'
+    sts LCDLine0+14, workC
+    ldi workC, '3'
+    sts LCDLine0+15, workC
+    rjmp stamp_done
+stamp_check_s2:
+    sbrs workD, 1
+    rjmp stamp_check_s1
+    ldi workC, 'S'
+    sts LCDLine0+14, workC
+    ldi workC, '2'
+    sts LCDLine0+15, workC
+    rjmp stamp_done
+stamp_check_s1:
+    sbrs workD, 0
+    rjmp stamp_done
+    ldi workC, 'S'
+    sts LCDLine0+14, workC
+    ldi workC, '1'
+    sts LCDLine0+15, workC
+stamp_done:
     ret
 
 
@@ -1140,10 +1162,6 @@ cfg_tag:
 do_s3:
     ori workD, 0x04
     sts StageFlags, workD
-    ldi workC, 'S'
-    sts LCDLine0+13, workC
-    ldi workC, '3'
-    sts LCDLine0+14, workC
 cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
 cfg_ret:          ; common return
