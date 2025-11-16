@@ -241,9 +241,9 @@ Nice‑to‑haves in Part 1 (optional)
 - [ ] Debounce PB0/PB1 using ticks
 - [ ] Replace “LED always on” with state‑driven LED policy
 
-Part 2 — Application State + UI (planned)
+Part 2 — Application State + UI
 
-State machine scaffold
+State machine scaffold (pending; minimal dispatcher enters CONFIG)
 - [ ] Implement `RunStateMachine` dispatcher
 - [ ] Implement `HandleIdleState`
 - [ ] Implement `HandleConfigState`
@@ -251,11 +251,40 @@ State machine scaffold
 - [ ] Implement `HandleScrollState`
 - [ ] Implement `HandlePlaybackState`
 - [ ] Implement `HandleDoneState`
+### Stage Beacons (completion indicators)
+Each stage beacon is an explicit, visible indicator that a discrete task is implemented and verified on hardware. The beacon is the `Sx` stamp rendered at the end of LCD line 0 (by `UpdateLCDForConfig`), plus an optional LED blip during bring‑up. These are not subtasks of a single handler; they gate progress through Part 2.
 
-- Stage beacons and incremental bring‑up
-- [x] S1 Key echo baseline — show last key at `LCDLine1[0]`; flash PC0; tag `S1` (implemented in SampleInputs/DriveOutputs)
-- [x] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; flash PC1; tag `S2` (implemented)
-- [x] S3 Cursor + editing — digits edit `(x,y,d)`; confirm with `#`; clear `*`; tag `S3`; echo `x,y,d` once all three are set (implemented)
+- [x] S1 — Input pipeline and LCD path validated
+  - Task: keypad scan → decode → event latch → LCD write‑out works end‑to‑end
+  - Visual: `S1` tag; (earlier) PC0 blip during bring‑up
+
+- [x] S2 — CONFIG screen scaffold
+  - Task: enter `STATE_CONFIG`; render `loc(__, __)` and `vis: __`
+  - Visual: `S2` tag (we later removed the dedicated stamping in favor of central stamping)
+
+- [x] S3 — Two‑digit editing + confirm/clear + echo
+  - Task: two‑digit live editing per field (`XEditVal/Cnt`, `YEditVal/Cnt`, `VEditVal/Cnt`); `#` confirms & clamps (X,Y: 0..14, vis: 0..15); `*` clears; echo two‑digit `x y d`
+  - Visual: `S3` tag
+
+- [ ] S4 — Path generation skeleton
+  - Task: `ResetCoverageMap` + minimal `GenerateSearchPath` producing a non‑empty `ObservationPath`
+  - Visual: `S4` tag
+
+- [ ] S5 — Scroll preview
+  - Task: `PreparePathScrollData` + `UpdateLCDForScroll` + `AdvanceScrollWindow`
+  - Visual: `S5` tag
+
+- [ ] S6 — Playback stepper
+  - Task: `BeginPlaybackRun` + `AdvancePlaybackStep` + `UpdateLCDForPlayback` at fixed 61/2
+  - Visual: `S6` tag
+
+- [ ] S7 — Done state
+  - Task: `HandleDoneState` shows final point + accident flag
+  - Visual: `S7` tag
+
+- [ ] S8 — Buttons + polish
+  - Task: PB0→path generation, PB1→playback; error handling and UI polish
+  - Visual: `S8` tag
 - [ ] S4 Generate path (skeleton) — minimal `ObservationPath`; flash PC3; tag `S4`
 - [ ] S5 Scroll preview — format and scroll list; flash PC4; tag `S5`
 - [ ] S6 Playback stepper — fixed 61/2; flash PC5; tag `S6`
