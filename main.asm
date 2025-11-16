@@ -1001,14 +1001,15 @@ ProcessConfigKey:
     breq cfg_next
     cpi workA, '*'
     breq cfg_clear
-    ; digits '0'..'9'
-    ; digit gate: reject outside '0'..'9' (use near targets then rjmp)
+    ; digits '0'..'9' gate using near branches
     cpi workA, '0'
-    brlo cfg_ret_dlow
-    cpi workA, '9'+1
-    brsh cfg_ret_dhi
-cfg_ret_dlow:     rjmp cfg_ret
-cfg_ret_dhi:      rjmp cfg_ret
+    brsh cfg_digit_ge0        ; if >= '0' continue
+    rjmp cfg_ret              ; else reject
+cfg_digit_ge0:
+    cpi workA, '9'+1          ; compare to ':' (one past '9')
+    brlo cfg_digit_ok         ; if < ':' then it's <= '9'
+    rjmp cfg_ret              ; else reject
+cfg_digit_ok:
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
