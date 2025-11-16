@@ -868,39 +868,104 @@ BeginPlaybackRun:
 	ret
 
 RunStateMachine:
-    ; Minimal dispatcher for S2: auto-enter CONFIG after IDLE
+    ; Central dispatcher by DroneState
     lds workA, DroneState
     cpi workA, STATE_IDLE
-    brne rs_not_idle
-    ; transition to CONFIG once
+    breq RS_IDLE
+    cpi workA, STATE_CONFIG
+    breq RS_CONFIG
+    cpi workA, STATE_PATH_GEN
+    breq RS_PATHGEN
+    cpi workA, STATE_SCROLL_PATH
+    breq RS_SCROLL
+    cpi workA, STATE_PLAYBACK
+    breq RS_PLAY
+    cpi workA, STATE_DONE
+    breq RS_DONE
+    ret
+RS_IDLE:
+    rcall HandleIdleState
+    ret
+RS_CONFIG:
+    rcall HandleConfigState
+    ret
+RS_PATHGEN:
+    rcall HandlePathGenState
+    ret
+RS_SCROLL:
+    rcall HandleScrollState
+    ret
+RS_PLAY:
+    rcall HandlePlaybackState
+    ret
+RS_DONE:
+    rcall HandleDoneState
+    ret
+
+HandleIdleState:
+    ; For now, auto-enter CONFIG on first tick for bring-up
     ldi workA, STATE_CONFIG
     sts DroneState, workA
     rcall UpdateLCDForConfig
     ret
-rs_not_idle:
-    cpi workA, STATE_CONFIG
-    breq rs_in_config
-    ; other states are TODO
-    ret
-rs_in_config:
-    ; For S2, nothing to do per tick yet (handlers will update later)
-    ret
-
-HandleIdleState:
-	; TODO: wait for reset input, clear LCD, display prompt
-	ret
 
 HandleConfigState:
-	; TODO: update LCD with "loc:(x,y)" and "visib: d" per Figure 4(a)
-	ret
+    ; If all three fields are set and S4 not yet stamped, run minimal path gen
+    lds workD, ConfigFlags
+    andi workD, 0x07
+    cpi workD, 0x07
+    brne hc_check_pb0
+    ; all set; if S4 not set, build path and mark S4
+    lds workB, StageFlags
+    sbrs workB, 3
+    rjmp hc_do_s4
+    rjmp hc_check_pb0
+hc_do_s4:
+    rcall ResetCoverageMap
+    rcall GenerateSearchPath
+    lds workA, PathLength
+    cpi workA, 0
+    breq hc_check_pb0
+    ori workB, (1<<3)
+    sts StageFlags, workB
+    ; auto-transition to scroll
+    ldi workA, STATE_SCROLL_PATH
+    sts DroneState, workA
+    ret
+hc_check_pb0:
+    ; If PB0 pressed, transition to path generation state (will go to scroll)
+    lds workB, ButtonSnapshot
+    sbrs workB, 0              ; PB0 bit
+    rjmp hc_render
+    ldi workA, STATE_PATH_GEN
+    sts DroneState, workA
+    ret
+hc_render:
+    ; Ensure CONFIG screen reflects latest edits/commits
+    rcall UpdateLCDForConfig
+    ret
 
 HandlePathGenState:
-	; TODO: call GenerateSearchPath and transition to STATE_SCROLL_PATH
-	ret
+		; S4: reset coverage and build a trivial non-empty path
+		rcall ResetCoverageMap
+		rcall GenerateSearchPath
+		; if PathLength > 0, set S4 flag and move to scroll
+		lds workA, PathLength
+		cpi workA, 0
+		breq hpg_done
+		; mark S4 in StageFlags (bit3)
+		lds workB, StageFlags
+		ori workB, (1<<3)
+		sts StageFlags, workB
+		; transition to scroll state (S5 will render)
+		ldi workA, STATE_SCROLL_PATH
+		sts DroneState, workA
+hpg_done:
+		ret
 
 HandleScrollState:
-	; TODO: show observation list ("0,0,0 / 3,3,6 / ...") scrolling right->left
-	ret
+		rcall UpdateLCDForScroll
+		ret
 
 HandlePlaybackState:
 	; TODO: step through ObservationPath, highlight current point, display
@@ -1175,6 +1240,15 @@ echo_v_tens_done:
 no_cfg_echo:
     ; Stage stamp at end of first line (line0[14..15]): prefer highest stage set
     lds workD, StageFlags
+    ; check S4
+    sbrs workD, 3
+    rjmp stamp_check_s3
+    ldi workC, 'S'
+    sts LCDLine0+14, workC
+    ldi workC, '4'
+    sts LCDLine0+15, workC
+    rjmp stamp_done
+stamp_check_s3:
     ; check S3
     sbrs workD, 2
     rjmp stamp_check_s2
@@ -1435,11 +1509,52 @@ BuildMountainModel:
 	ret
 
 ResetCoverageMap:
-	; TODO: clear CoverageMask, PathLength, PathIndex
+	; Clear CoverageMask array and path indices
+	push YL
+	push YH
+	clr workA
+	; Clear CoverageMask[MAP_CELLS]
+	ldi YL, low(CoverageMask)
+	ldi YH, high(CoverageMask)
+	ldi workB, MAP_CELLS
+rcm_loop:
+	st Y+, workA
+	dec workB
+	brne rcm_loop
+	; Zero path meta
+	sts PathLength, workA
+	sts PathIndex, workA
+	sts ScrollHead, workA
+	pop YH
+	pop YL
 	ret
 
 GenerateSearchPath:
-	; TODO: observation planning loop based on visibility distance
+	; Build a trivial non-empty path: (X,Y,0) and (X,Y,Vis)
+	push YL
+	push YH
+	ldi YL, low(ObservationPath)
+	ldi YH, high(ObservationPath)
+	; Load current config
+	lds workC, AccidentX
+	lds workD, AccidentY
+	lds workE, Visibility
+	; Point 0: (X,Y,0)
+	st Y+, workC
+	st Y+, workD
+	clr workA
+	st Y+, workA
+	; Point 1: (X,Y,Vis)
+	st Y+, workC
+	st Y+, workD
+	st Y+, workE
+	; PathLength = 2, PathIndex=0
+	ldi workA, 2
+	sts PathLength, workA
+	clr workA
+	sts PathIndex, workA
+	pop YH
+	pop YL
 	ret
 
 FindNextObservation:
@@ -1463,8 +1578,158 @@ PreparePathScrollData:
 ; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
 ; =============================================================================
 UpdateLCDForScroll:
-	; TODO: convert ObservationPath into slash-separated ASCII chunk
-	ret
+		; Render first two path points as "xx,yy,zz / xx,yy" (fits 16 cols)
+		push YL
+		push YH
+        ; Clear BOTH lines to prevent leftover S3 text (e.g., "loc(x,y)")
+        ; line 0
+        ldi YL, low(LCDLine0)
+        ldi YH, high(LCDLine0)
+        ldi workA, LCD_COLS
+        ldi workB, ' '
+uls_fill0:
+                st Y+, workB
+                dec workA
+                brne uls_fill0
+        ; line 1
+        ldi YL, low(LCDLine1)
+        ldi YH, high(LCDLine1)
+        ldi workA, LCD_COLS
+uls_fill1:
+                st Y+, workB
+                dec workA
+                brne uls_fill1
+		; load first two points from ObservationPath
+		ldi YL, low(ObservationPath)
+		ldi YH, high(ObservationPath)
+		ld workC, Y+   ; x0
+		ld workD, Y+   ; y0
+		ld workE, Y+   ; z0
+		ld workF, Y+   ; x1
+		ld workG, Y+   ; y1
+		; x0 -> [0],[1]
+		mov workA, workC
+		cpi workA, 10
+		brlo uls_x0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_x0_ones
+uls_x0_lt10:
+		ldi workB, ' '
+uls_x0_ones:
+		ldi workC, '0'
+		add workA, workC
+                sts LCDLine1+0, workB
+                sts LCDLine1+1, workA
+		; comma
+		ldi workA, ','
+                sts LCDLine1+2, workA
+		; y0 -> [3],[4]
+		mov workA, workD
+		cpi workA, 10
+		brlo uls_y0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_y0_ones
+uls_y0_lt10:
+		ldi workB, ' '
+uls_y0_ones:
+		ldi workC, '0'
+		add workA, workC
+                sts LCDLine1+3, workB
+                sts LCDLine1+4, workA
+		; comma
+		ldi workA, ','
+                sts LCDLine1+5, workA
+		; z0 -> [6],[7]
+		mov workA, workE
+		cpi workA, 10
+		brlo uls_z0_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_z0_ones
+uls_z0_lt10:
+		ldi workB, ' '
+uls_z0_ones:
+		ldi workC, '0'
+		add workA, workC
+                sts LCDLine1+6, workB
+                sts LCDLine1+7, workA
+		; space, '/', space
+		ldi workA, ' '
+                sts LCDLine1+8, workA
+		ldi workA, '/'
+                sts LCDLine1+9, workA
+		ldi workA, ' '
+                sts LCDLine1+10, workA
+		; x1 -> [11],[12]
+		mov workA, workF
+		cpi workA, 10
+		brlo uls_x1_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_x1_ones
+uls_x1_lt10:
+		ldi workB, ' '
+uls_x1_ones:
+		ldi workC, '0'
+		add workA, workC
+                sts LCDLine1+11, workB
+                sts LCDLine1+12, workA
+		; comma
+		ldi workA, ','
+                sts LCDLine1+13, workA
+		; y1 -> [14],[15]
+		mov workA, workG
+		cpi workA, 10
+		brlo uls_y1_lt10
+		ldi workB, '1'
+		subi workA, 10
+		rjmp uls_y1_ones
+uls_y1_lt10:
+		ldi workB, ' '
+uls_y1_ones:
+		ldi workC, '0'
+		add workA, workC
+                sts LCDLine1+14, workB
+                sts LCDLine1+15, workA
+                ; Stamp stage on line 0 end (14..15) after clearing
+                lds workD, StageFlags
+                ; S4
+                sbrs workD, 3
+                rjmp uls_stamp_s3
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '4'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s3:
+                sbrs workD, 2
+                rjmp uls_stamp_s2
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '3'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s2:
+                sbrs workD, 1
+                rjmp uls_stamp_s1
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '2'
+                sts LCDLine0+15, workC
+                rjmp uls_stamp_done
+uls_stamp_s1:
+                sbrs workD, 0
+                rjmp uls_stamp_done
+                ldi workC, 'S'
+                sts LCDLine0+14, workC
+                ldi workC, '1'
+                sts LCDLine0+15, workC
+uls_stamp_done:
+                pop YH
+                pop YL
+                ret
 
 UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed

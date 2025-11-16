@@ -196,6 +196,7 @@ Stages
 
 5) S5 — Format + scroll preview
    - Implement `PreparePathScrollData` and `UpdateLCDForScroll`.
+   - Clear both LCD lines in `UpdateLCDForScroll` and then re‑stamp the stage tag on line 0 (cols 14–15). This prevents the S3 header `loc(x,y)` from lingering when transitioning into S4/S5.
    - Drive `STATE_SCROLL_PATH` preview using `AdvanceScrollWindow`.
    - Flash PC4 on first entry into scroll; print `S5`.
 
@@ -243,10 +244,10 @@ Nice‑to‑haves in Part 1 (optional)
 
 Part 2 — Application State + UI
 
-State machine scaffold (pending; minimal dispatcher enters CONFIG)
-- [ ] Implement `RunStateMachine` dispatcher
-- [ ] Implement `HandleIdleState`
-- [ ] Implement `HandleConfigState`
+State machine scaffold (in progress)
+- [x] Implement `RunStateMachine` dispatcher
+- [x] Implement `HandleIdleState`
+- [x] Implement `HandleConfigState`
 - [ ] Implement `HandlePathGenState`
 - [ ] Implement `HandleScrollState`
 - [ ] Implement `HandlePlaybackState`
@@ -266,8 +267,8 @@ Each stage beacon is an explicit, visible indicator that a discrete task is impl
   - Task: two‑digit live editing per field (`XEditVal/Cnt`, `YEditVal/Cnt`, `VEditVal/Cnt`); `#` confirms & clamps (X,Y: 0..14, vis: 0..15); `*` clears; echo two‑digit `x y d`
   - Visual: `S3` tag
 
-- [ ] S4 — Path generation skeleton
-  - Task: `ResetCoverageMap` + minimal `GenerateSearchPath` producing a non‑empty `ObservationPath`
+- [x] S4 — Path generation skeleton
+  - Task: `ResetCoverageMap` + minimal `GenerateSearchPath` producing a non‑empty `ObservationPath` (two points)
   - Visual: `S4` tag
 
 - [ ] S5 — Scroll preview
