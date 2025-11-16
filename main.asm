@@ -272,6 +272,13 @@ AccidentY:             .byte 1
 Visibility:            .byte 1
 InputCursor:           .byte 1          ; which field digit is being edited
 ConfigFlags:           .byte 1
+; live edit buffers for two-digit entry per field
+XEditVal:              .byte 1          ; 0..99 temporary value for X
+XEditCnt:              .byte 1          ; digits entered (0..2)
+YEditVal:              .byte 1
+YEditCnt:              .byte 1
+VEditVal:              .byte 1
+VEditCnt:              .byte 1
 
 	; ----- Part 3: terrain + path data -----
 MountainMatrix:        .byte MAP_CELLS
@@ -483,13 +490,21 @@ InitStateMachine:
 	sts QueueTail, temp0
 	sts DroneState, temp0
 	sts PlaybackIndex, temp0
-	sts PlaybackTimer, temp0
-	sts AccidentFoundFlag, temp0
+    sts PlaybackTimer, temp0
+    sts AccidentFoundFlag, temp0
 
-	ldi workA, DEFAULT_ALT_DM
-	sts AltitudeDm, workA
-	ldi workA, DEFAULT_SPEED_DMPS
-	sts SpeedDmPerS, workA
+    ldi workA, DEFAULT_ALT_DM
+    sts AltitudeDm, workA
+    ldi workA, DEFAULT_SPEED_DMPS
+    sts SpeedDmPerS, workA
+
+    ; clear edit buffers
+    sts XEditVal, temp0
+    sts XEditCnt, temp0
+    sts YEditVal, temp0
+    sts YEditCnt, temp0
+    sts VEditVal, temp0
+    sts VEditCnt, temp0
 
 	; Fill LCD buffers with spaces
 	ldi YL, low(LCDLine0)
@@ -931,97 +946,232 @@ ulc_fill1:
     sts LCDLine0+2, workC
     ldi workC, '('
     sts LCDLine0+3, workC
-    ; X field (underscore if not set)
+    ; X two-digit slot at [4],[5]
     lds workD, ConfigFlags
     sbrs workD, 0
-    rjmp x_underscore
+    rjmp x_pending
+    ; confirmed X -> show two digits
     lds workE, AccidentX
+    cpi workE, 10
+    brlo x_conf_lt10
+    ldi workC, '1'
+    sts LCDLine0+4, workC
+    subi workE, 10
+    rjmp x_conf_ones
+x_conf_lt10:
+    ldi workC, ' '
+    sts LCDLine0+4, workC
+x_conf_ones:
     ldi workC, '0'
     add workE, workC
-    sts LCDLine0+4, workE
+    sts LCDLine0+5, workE
     rjmp after_x
-x_underscore:
+x_pending:
+    ; show edit buffer underscores/digits
+    lds workE, XEditCnt
+    cpi workE, 0
+    breq x_unders
+    cpi workE, 1
+    breq x_one
+    ; two digits in XEditVal
+    lds workE, XEditVal
+    cpi workE, 10
+    brlo x_two_lt10
+    ldi workC, '1'
+    sts LCDLine0+4, workC
+    subi workE, 10
+    rjmp x_two_ones
+x_two_lt10:
+    ldi workC, ' '
+    sts LCDLine0+4, workC
+x_two_ones:
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine0+5, workE
+    rjmp after_x
+x_one:
     ldi workC, '_'
     sts LCDLine0+4, workC
+    lds workE, XEditVal
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine0+5, workE
+    rjmp after_x
+x_unders:
+    ldi workC, '_'
+    sts LCDLine0+4, workC
+    sts LCDLine0+5, workC
 after_x:
     ; comma + space
     ldi workC, ','
-    sts LCDLine0+5, workC
-    ldi workC, ' '
     sts LCDLine0+6, workC
-    ; Y field
+    ldi workC, ' '
+    sts LCDLine0+7, workC
+    ; Y two-digit slot at [8],[9]
     lds workD, ConfigFlags
     sbrs workD, 1
-    rjmp y_underscore
+    rjmp y_pending
     lds workE, AccidentY
+    cpi workE, 10
+    brlo y_conf_lt10
+    ldi workC, '1'
+    sts LCDLine0+8, workC
+    subi workE, 10
+    rjmp y_conf_ones
+y_conf_lt10:
+    ldi workC, ' '
+    sts LCDLine0+8, workC
+y_conf_ones:
     ldi workC, '0'
     add workE, workC
-    sts LCDLine0+7, workE
+    sts LCDLine0+9, workE
     rjmp after_y
-y_underscore:
+y_pending:
+    lds workE, YEditCnt
+    cpi workE, 0
+    breq y_unders
+    cpi workE, 1
+    breq y_one
+    lds workE, YEditVal
+    cpi workE, 10
+    brlo y_two_lt10
+    ldi workC, '1'
+    sts LCDLine0+8, workC
+    subi workE, 10
+    rjmp y_two_ones
+y_two_lt10:
+    ldi workC, ' '
+    sts LCDLine0+8, workC
+y_two_ones:
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine0+9, workE
+    rjmp after_y
+y_one:
     ldi workC, '_'
-    sts LCDLine0+7, workC
+    sts LCDLine0+8, workC
+    lds workE, YEditVal
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine0+9, workE
+    rjmp after_y
+y_unders:
+    ldi workC, '_'
+    sts LCDLine0+8, workC
+    sts LCDLine0+9, workC
 after_y:
     ldi workC, ')'
-    sts LCDLine0+8, workC
-    ; Build line 1: visib: __ (or digit)
+    sts LCDLine0+10, workC
+    ; Build line 1: vis: __ (two-digit slot at [4],[5])
     ldi workC, 'v'
     sts LCDLine1+0, workC
     ldi workC, 'i'
     sts LCDLine1+1, workC
     ldi workC, 's'
     sts LCDLine1+2, workC
-    ldi workC, 'i'
-    sts LCDLine1+3, workC
-    ldi workC, 'b'
-    sts LCDLine1+4, workC
     ldi workC, ':'
-    sts LCDLine1+5, workC
-    ldi workC, ' '
-    sts LCDLine1+6, workC
-    ; visibility digit or underscore
+    sts LCDLine1+3, workC
+    ; visibility two-digit or underscores at [4],[5]
     lds workD, ConfigFlags
     sbrs workD, 2
-    rjmp vis_underscore
+    rjmp vis_pending
     lds workE, Visibility
+    cpi workE, 10
+    brlo vis_lt10
+    ldi workC, '1'
+    sts LCDLine1+4, workC
+    subi workE, 10
+    rjmp vis_ones
+vis_lt10:
+    ldi workC, ' '
+    sts LCDLine1+4, workC
+vis_ones:
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+7, workE
+    sts LCDLine1+5, workE
     rjmp after_vis
-vis_underscore:
+vis_pending:
+    lds workE, VEditCnt
+    cpi workE, 0
+    breq vis_unders
+    cpi workE, 1
+    breq vis_one
+    ; two digits in VEditVal
+    lds workE, VEditVal
+    cpi workE, 10
+    brlo vis_two_lt10
+    ldi workC, '1'
+    sts LCDLine1+4, workC
+    subi workE, 10
+    rjmp vis_two_ones
+vis_two_lt10:
+    ldi workC, ' '
+    sts LCDLine1+4, workC
+vis_two_ones:
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine1+5, workE
+    rjmp after_vis
+vis_one:
     ldi workC, '_'
-    sts LCDLine1+7, workC
+    sts LCDLine1+4, workC
+    lds workE, VEditVal
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine1+5, workE
+    rjmp after_vis
+vis_unders:
+    ldi workC, '_'
+    sts LCDLine1+4, workC
+    sts LCDLine1+5, workC
 after_vis:
-    ; If all three fields set (bits 0..2), echo with left padding on line 1
+    ; If all three fields set (bits 0..2), echo two-digit values with spacing
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
     brne no_cfg_echo
-    ; Add extra left padding: keep [8..9] as spaces, write "x y d" at [10..14]
-    ldi workE, ' '
-    sts LCDLine1+8, workE
-    sts LCDLine1+9, workE
-    ; X at [10]
-    ldi workC, '0'
+    ; X at [8],[9]
     lds workE, AccidentX
-    add workE, workC
-    sts LCDLine1+10, workE
-    ; space at [11]
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_x_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_x_tens_done:
+    sts LCDLine1+8, workC
+    ldi workG, '0'
+    add workE, workG
+    sts LCDLine1+9, workE
+    ; space at [10]
     ldi workE, ' '
-    sts LCDLine1+11, workE
-    ; Y at [12]
+    sts LCDLine1+10, workE
+    ; Y at [11],[12]
     lds workE, AccidentY
-    ldi workC, '0'
-    add workE, workC
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_y_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_y_tens_done:
+    sts LCDLine1+11, workC
+    ldi workG, '0'
+    add workE, workG
     sts LCDLine1+12, workE
     ; space at [13]
     ldi workE, ' '
     sts LCDLine1+13, workE
-    ; Visibility at [14]
+    ; Vis at [14],[15]
     lds workE, Visibility
-    ldi workC, '0'
-    add workE, workC
-    sts LCDLine1+14, workE
+    ldi workC, ' '
+    cpi workE, 10
+    brlo echo_v_tens_done
+    ldi workC, '1'
+    subi workE, 10
+echo_v_tens_done:
+    sts LCDLine1+14, workC
+    ldi workG, '0'
+    add workE, workG
+    sts LCDLine1+15, workE
 no_cfg_echo:
     ; Stage stamp at end of first line (line0[14..15]): prefer highest stage set
     lds workD, StageFlags
@@ -1057,66 +1207,173 @@ ProcessConfigKey:
     ; workA holds the ASCII key from KeypadSnapshot
     ; '#' advances cursor; digits set current field; '*' clears current field
     ; Cursor mapping: 0=X, 1=Y, 2=Visibility
+    ; '#' advances, '*' clears (use near branches + rjmp for long targets)
     cpi workA, '#'
-    breq cfg_next
+    brne key_not_hash
+    rjmp cfg_next
+key_not_hash:
     cpi workA, '*'
-    breq cfg_clear
+    brne key_not_star
+    rjmp cfg_clear
+key_not_star:
     ; digits '0'..'9' gate using near branches
     cpi workA, '0'
     brsh cfg_digit_ge0        ; if >= '0' continue
     rjmp cfg_ret              ; else reject
 cfg_digit_ge0:
     cpi workA, '9'+1          ; compare to ':' (one past '9')
-    brlo cfg_digit_ok         ; if < ':' then it's <= '9'
+    brlo cfg_digit_islte9     ; if < ':' then it's <= '9'
     rjmp cfg_ret              ; else reject
-cfg_digit_ok:
+cfg_digit_islte9:
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
     ; fetch cursor
     lds workB, InputCursor
     cpi workB, 0
-    breq set_x
+    breq edit_x
     cpi workB, 1
-    breq set_y
-    ; else visibility
-set_vis:
-    ; 0..9 allowed
-    sts Visibility, workE
-    lds workD, ConfigFlags
-    ori workD, (1<<2)
-    sts ConfigFlags, workD
+    breq edit_y
+    ; else visibility editing
+edit_vis:
+    ; append digit into VEditVal/VEditCnt if room
+    lds workD, VEditCnt
+    cpi workD, 0
+    breq v_first
+    cpi workD, 1
+    breq v_second
     rjmp cfg_refresh
-set_y:
-    ; clamp to 0..14 (grid max 15)
-    cpi workE, 15
-    brsh cfg_y_oob
-    ; ok -> store Y
-    rjmp cfg_store_y
-cfg_y_oob:        ; Y out of bounds (>6) -> reject
-    rjmp cfg_ret
-cfg_store_y:      ; store new Y and mark as set
-    sts AccidentY, workE
-    lds workD, ConfigFlags
-    ori workD, (1<<1)
-    sts ConfigFlags, workD
+v_first:
+    sts VEditVal, workE
+    ldi workD, 1
+    sts VEditCnt, workD
     rjmp cfg_refresh
-set_x:
-    ; clamp to 0..14 (grid max 15)
+v_second:
+    ; new = old*10 + digit
+    lds workF, VEditVal   ; old
+    mov workG, workF      ; *2
+    lsl workG
+    mov workA, workF      ; *8
+    lsl workA
+    lsl workA
+    lsl workA
+    add workA, workG      ; *10
+    add workA, workE      ; +digit
+    sts VEditVal, workA
+    ldi workD, 2
+    sts VEditCnt, workD
+    rjmp cfg_refresh
+edit_y:
+    lds workD, YEditCnt
+    cpi workD, 0
+    breq y_first
+    cpi workD, 1
+    breq y_second
+    rjmp cfg_refresh
+y_first:
+    sts YEditVal, workE
+    ldi workD, 1
+    sts YEditCnt, workD
+    rjmp cfg_refresh
+y_second:
+    lds workF, YEditVal
+    mov workG, workF
+    lsl workG              ; *2
+    mov workA, workF
+    lsl workA
+    lsl workA
+    lsl workA              ; *8
+    add workA, workG       ; *10
+    add workA, workE
+    sts YEditVal, workA
+    ldi workD, 2
+    sts YEditCnt, workD
+    rjmp cfg_refresh
+edit_x:
+    lds workD, XEditCnt
+    cpi workD, 0
+    breq x_first
+    cpi workD, 1
+    breq x_second
+    rjmp cfg_refresh
+x_first:
+    sts XEditVal, workE
+    ldi workD, 1
+    sts XEditCnt, workD
+    rjmp cfg_refresh
+x_second:
+    lds workF, XEditVal
+    mov workG, workF
+    lsl workG
+    mov workA, workF
+    lsl workA
+    lsl workA
+    lsl workA
+    add workA, workG
+    add workA, workE
+    sts XEditVal, workA
+    ldi workD, 2
+    sts XEditCnt, workD
+    rjmp cfg_refresh
+cfg_next:
+    ; confirm current field (use edit buffers) then advance cursor 0->1->2
+    lds workB, InputCursor
+    cpi workB, 0
+    breq confirm_x
+    cpi workB, 1
+    breq confirm_y
+    rjmp confirm_vis
+confirm_x:
+    lds workD, XEditCnt
+    cpi workD, 0
+    breq advance_cursor
+    lds workE, XEditVal
     cpi workE, 15
-    brsh cfg_x_oob
-    ; ok -> store X
-    rjmp cfg_store_x
-cfg_x_oob:        ; X out of bounds (>6) -> reject
-    rjmp cfg_ret
-cfg_store_x:      ; store new X and mark as set
+    brlo x_inrange
+    ldi workE, 14
+x_inrange:
     sts AccidentX, workE
     lds workD, ConfigFlags
     ori workD, (1<<0)
     sts ConfigFlags, workD
-    rjmp cfg_refresh
-cfg_next:
-    ; advance cursor 0->1->2 (stay at 2)
+    clr workD
+    sts XEditCnt, workD
+    sts XEditVal, workD
+    rjmp advance_cursor
+confirm_y:
+    lds workD, YEditCnt
+    cpi workD, 0
+    breq advance_cursor
+    lds workE, YEditVal
+    cpi workE, 15
+    brlo y_inrange
+    ldi workE, 14
+y_inrange:
+    sts AccidentY, workE
+    lds workD, ConfigFlags
+    ori workD, (1<<1)
+    sts ConfigFlags, workD
+    clr workD
+    sts YEditCnt, workD
+    sts YEditVal, workD
+    rjmp advance_cursor
+confirm_vis:
+    lds workD, VEditCnt
+    cpi workD, 0
+    breq advance_cursor
+    lds workE, VEditVal
+    cpi workE, 16
+    brlo v_inrange
+    ldi workE, 15
+v_inrange:
+    sts Visibility, workE
+    lds workD, ConfigFlags
+    ori workD, (1<<2)
+    sts ConfigFlags, workD
+    clr workD
+    sts VEditCnt, workD
+    sts VEditVal, workD
+advance_cursor:
     lds workB, InputCursor
     inc workB
     cpi workB, 3
@@ -1141,14 +1398,16 @@ cfg_clear:
     rjmp cfg_refresh
 clr_y:
     clr workE
-    sts AccidentY, workE
+    sts YEditVal, workE
+    sts YEditCnt, workE
     lds workD, ConfigFlags
     andi workD, 0b11111101
     sts ConfigFlags, workD
     rjmp cfg_refresh
 clr_x:
     clr workE
-    sts AccidentX, workE
+    sts XEditVal, workE
+    sts XEditCnt, workE
     lds workD, ConfigFlags
     andi workD, 0b11111110
     sts ConfigFlags, workD
