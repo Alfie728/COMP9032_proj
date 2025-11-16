@@ -961,6 +961,33 @@ vis_underscore:
     ldi workC, '_'
     sts LCDLine1+7, workC
 after_vis:
+    ; If all three fields set (bits 0..2), echo "x,y,d" at line1[8..12]
+    lds workD, ConfigFlags
+    andi workD, 0x07
+    cpi workD, 0x07
+    brne no_cfg_echo
+    ; X
+    ldi workC, '0'
+    lds workE, AccidentX
+    add workE, workC
+    sts LCDLine1+8, workE
+    ; comma
+    ldi workE, ','
+    sts LCDLine1+9, workE
+    ; Y
+    lds workE, AccidentY
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine1+10, workE
+    ; comma
+    ldi workE, ','
+    sts LCDLine1+11, workE
+    ; Visibility
+    lds workE, Visibility
+    ldi workC, '0'
+    add workE, workC
+    sts LCDLine1+12, workE
+no_cfg_echo:
     ret
 
 S2_BeaconTag:
