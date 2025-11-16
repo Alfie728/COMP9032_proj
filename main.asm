@@ -1196,10 +1196,15 @@ ProcessConfigKey:
     ; workA holds the ASCII key from KeypadSnapshot
     ; '#' advances cursor; digits set current field; '*' clears current field
     ; Cursor mapping: 0=X, 1=Y, 2=Visibility
+    ; '#' advances, '*' clears (use near branches + rjmp for long targets)
     cpi workA, '#'
-    breq cfg_next
+    brne key_not_hash
+    rjmp cfg_next
+key_not_hash:
     cpi workA, '*'
-    breq cfg_clear
+    brne key_not_star
+    rjmp cfg_clear
+key_not_star:
     ; digits '0'..'9' gate using near branches
     cpi workA, '0'
     brsh cfg_digit_ge0        ; if >= '0' continue
