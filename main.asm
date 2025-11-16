@@ -451,26 +451,26 @@ SampleInputs:
 	mov temp0, workA
 	sts ButtonSnapshot, temp0
 
-	; ----- S1: key echo baseline -----
-	; If there is a new KeypadSnapshot event, store it as LastKeyEcho and
-	; stamp the 'S1' tag once (bit0 in StageFlags ensures one-shot).
-	lds temp0, KeypadSnapshot
-	cpi temp0, 0
-	breq s1_skip_update
-	sts LastKeyEcho, temp0
-	lds temp1, StageFlags
-	sbrs temp1, 0
-	rjmp s1_set_tag
-	rjmp s1_skip_update
+    ; ----- S1: key echo baseline -----
+    ; If there is a new KeypadSnapshot event, store it as LastKeyEcho and
+    ; stamp the 'S1' tag once (bit0 in StageFlags ensures one-shot).
+    lds workA, KeypadSnapshot
+    tst workA
+    breq s1_skip_update
+    sts LastKeyEcho, workA
+    lds workB, StageFlags
+    sbrs workB, 0
+    rjmp s1_set_tag
+    rjmp s1_skip_update
 s1_set_tag:
-	ori temp1, 1
-	sts StageFlags, temp1
-	ldi workA, 'S'
-	sts LCDLine1+13, workA
-	ldi workA, '1'
-	sts LCDLine1+14, workA
+    ori workB, 1
+    sts StageFlags, workB
+    ldi workC, 'S'
+    sts LCDLine1+13, workC
+    ldi workC, '1'
+    sts LCDLine1+14, workC
 s1_skip_update:
-	ret
+    ret
 
 DriveOutputs:
 		; Heartbeat spinner at LCD [0,0] using ScrollTimer bit 7
