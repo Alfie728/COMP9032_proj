@@ -910,14 +910,33 @@ HandleIdleState:
     ret
 
 HandleConfigState:
-    ; If PB0 pressed, transition to path generation (S4)
+    ; If all three fields are set and S4 not yet stamped, run minimal path gen
+    lds workD, ConfigFlags
+    andi workD, 0x07
+    cpi workD, 0x07
+    brne hc_check_pb0
+    ; all set; if S4 not set, build path and mark S4
+    lds workB, StageFlags
+    sbrs workB, 3
+    rjmp hc_do_s4
+    rjmp hc_check_pb0
+hc_do_s4:
+    rcall ResetCoverageMap
+    rcall GenerateSearchPath
+    lds workA, PathLength
+    cpi workA, 0
+    breq hc_check_pb0
+    ori workB, (1<<3)
+    sts StageFlags, workB
+hc_check_pb0:
+    ; If PB0 pressed, transition to path generation state (will go to scroll)
     lds workB, ButtonSnapshot
     sbrs workB, 0              ; PB0 bit
-    rjmp hc_no_pb0
+    rjmp hc_render
     ldi workA, STATE_PATH_GEN
     sts DroneState, workA
     ret
-hc_no_pb0:
+hc_render:
     ; Ensure CONFIG screen reflects latest edits/commits
     rcall UpdateLCDForConfig
     ret
