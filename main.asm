@@ -775,43 +775,6 @@ HandlePB0PathGen:
 	; TODO: respond to PB0 press to trigger Part 3
 	ret
 
-; ==============================================================================
-; Part 3: Terrain modelling and search-path generation
-; ==============================================================================
-
-BuildMountainModel:
-	; TODO: populate MountainMatrix with chosen primitive shapes
-	ret
-
-ResetCoverageMap:
-	; TODO: clear CoverageMask, PathLength, PathIndex
-	ret
-
-GenerateSearchPath:
-	; TODO: observation planning loop based on visibility distance
-	ret
-
-FindNextObservation:
-	; TODO: evaluate remaining cells and pick best observation point
-	ret
-
-UpdateCoverageForPoint:
-	; TODO: mark CoverageMask entries covered from current observation
-	ret
-
-StoreObservationPoint:
-	; TODO: push x,y,z into ObservationPath buffer
-	ret
-
-PreparePathScrollData:
-	; TODO: format buffer for LCD scrolling (line 0) "0,0,0 / 3,3,6 / ..."
-	; TODO: ensure segments fit 16 chars and wrap like Figure 4(b)
-	ret
-
-; ==============================================================================
-; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
-; ==============================================================================
-
 BeginScrollPreview:
 	; TODO: executed after PB0 path generation to enter STATE_SCROLL_PATH
 	ret
@@ -1142,6 +1105,42 @@ cfg_refresh:      ; re-render config UI after a change
 cfg_ret:          ; common return
     ret
 
+; =============================================================================
+; Part 3: Terrain modelling and search-path generation
+; =============================================================================
+
+BuildMountainModel:
+	; TODO: populate MountainMatrix with chosen primitive shapes
+	ret
+
+ResetCoverageMap:
+	; TODO: clear CoverageMask, PathLength, PathIndex
+	ret
+
+GenerateSearchPath:
+	; TODO: observation planning loop based on visibility distance
+	ret
+
+FindNextObservation:
+	; TODO: evaluate remaining cells and pick best observation point
+	ret
+
+UpdateCoverageForPoint:
+	; TODO: mark CoverageMask entries covered from current observation
+	ret
+
+StoreObservationPoint:
+	; TODO: push x,y,z into ObservationPath buffer
+	ret
+
+PreparePathScrollData:
+	; TODO: format buffer for LCD scrolling (line 0) "0,0,0 / 3,3,6 / ..."
+	; TODO: ensure segments fit 16 chars and wrap like Figure 4(b)
+	ret
+
+; =============================================================================
+; Part 4: Search-path playback and LCD formatting (no dynamic speed/crash)
+; =============================================================================
 UpdateLCDForScroll:
 	; TODO: convert ObservationPath into slash-separated ASCII chunk
 	ret
