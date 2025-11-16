@@ -764,11 +764,7 @@ latch_done:
 ; ==============================================================================
 
 EnterConfigMode:
-	; TODO: invoked after reset button, gather accident location & visibility
-	ret
-
-ProcessConfigKey:
-	; TODO: update InputCursor, store digits in AccidentX/Y/Visibility
+	; reserved for future use (manual entry trigger)
 	ret
 
 FinalizeConfig:
@@ -1007,9 +1003,9 @@ ProcessConfigKey:
     breq cfg_clear
     ; digits '0'..'9'
     cpi workA, '0'
-    brlo cfg_done
+    brlo cfg_ret
     cpi workA, '9'+1
-    brsh cfg_done
+    brsh cfg_ret
     ; convert to numeric in workE
     mov workE, workA
     subi workE, '0'
@@ -1030,7 +1026,7 @@ set_vis:
 set_y:
     ; clamp to 0..6
     cpi workE, 7
-    brsh cfg_done
+    brsh cfg_ret
     sts AccidentY, workE
     lds workD, ConfigFlags
     ori workD, (1<<1)
@@ -1039,7 +1035,7 @@ set_y:
 set_x:
     ; clamp to 0..6
     cpi workE, 7
-    brsh cfg_done
+    brsh cfg_ret
     sts AccidentX, workE
     lds workD, ConfigFlags
     ori workD, (1<<0)
@@ -1098,7 +1094,7 @@ do_s3:
     sts LCDLine1+14, workC
 cfg_refresh:
     rcall UpdateLCDForConfig
-cfg_done:
+cfg_ret:
     ret
 
 UpdateLCDForScroll:
