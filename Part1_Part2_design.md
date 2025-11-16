@@ -196,6 +196,7 @@ Stages
 
 5) S5 — Format + scroll preview
    - Implement `PreparePathScrollData` and `UpdateLCDForScroll`.
+   - Clear both LCD lines in `UpdateLCDForScroll` and then re‑stamp the stage tag on line 0 (cols 14–15). This prevents the S3 header `loc(x,y)` from lingering when transitioning into S4/S5.
    - Drive `STATE_SCROLL_PATH` preview using `AdvanceScrollWindow`.
    - Flash PC4 on first entry into scroll; print `S5`.
 

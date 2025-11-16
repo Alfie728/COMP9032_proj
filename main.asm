@@ -1581,15 +1581,24 @@ UpdateLCDForScroll:
 		; Render first two path points as "xx,yy,zz / xx,yy" (fits 16 cols)
 		push YL
 		push YH
-        ; clear line 1 (keep line 0 for stage stamp)
+        ; Clear BOTH lines to prevent leftover S3 text (e.g., "loc(x,y)")
+        ; line 0
+        ldi YL, low(LCDLine0)
+        ldi YH, high(LCDLine0)
+        ldi workA, LCD_COLS
+        ldi workB, ' '
+uls_fill0:
+                st Y+, workB
+                dec workA
+                brne uls_fill0
+        ; line 1
         ldi YL, low(LCDLine1)
         ldi YH, high(LCDLine1)
         ldi workA, LCD_COLS
-        ldi workB, ' '
-uls_fill:
+uls_fill1:
                 st Y+, workB
                 dec workA
-                brne uls_fill
+                brne uls_fill1
 		; load first two points from ObservationPath
 		ldi YL, low(ObservationPath)
 		ldi YH, high(ObservationPath)
