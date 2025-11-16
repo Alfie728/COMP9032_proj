@@ -672,19 +672,24 @@ write_line1_done:
 
 ; ----- Keypad helper routines -------------------------------------------------
 ScanKeypad:
-	ldi workA, INIT_COL_MASK
-	clr workB                 ; column index
-	ldi workF, 0xFF           ; assume no key
-	sts PORTL, workA
+    ldi workA, INIT_COL_MASK
+    clr workB                 ; column index
+    ldi workF, 0xFF           ; assume no key
+    ; Ensure row pull-ups (low nibble) remain 1s regardless of shifts
+    mov workC, workA
+    ori workC, ROWMASK
+    sts PORTL, workC
 scan_column_loop:
-	cpi workB, 4
-	breq scan_done
-	sts PORTL, workA
-	ldi workC, KEYPAD_SETTLE_LO
-	mov temp7, workC
-	ldi workC, KEYPAD_SETTLE_HI
-	mov temp8, workC
-	delay
+    cpi workB, 4
+    breq scan_done
+    mov workC, workA
+    ori workC, ROWMASK        ; keep PL3..PL0 high (pull-ups enabled)
+    sts PORTL, workC
+    ldi workC, KEYPAD_SETTLE_LO
+    mov temp7, workC
+    ldi workC, KEYPAD_SETTLE_HI
+    mov temp8, workC
+    delay
 	lds workC, PINL
 	andi workC, ROWMASK
 	cpi workC, ROWMASK
@@ -701,15 +706,17 @@ key_identified:
 	mov workF, workB
 	rjmp scan_exit
 next_column:
-	lsl workA
-	inc workB
-	rjmp scan_column_loop
+    lsl workA
+    ori workA, ROWMASK        ; never let row nibble drop during shifts
+    inc workB
+    rjmp scan_column_loop
 scan_done:
-	ldi workF, 0xFF
+    ldi workF, 0xFF
 scan_exit:
-	ldi workC, INIT_COL_MASK
-	sts PORTL, workC
-	ret
+    ldi workC, INIT_COL_MASK
+    ori workC, ROWMASK
+    sts PORTL, workC
+    ret
 
 DecodeKey:
 	cpi workF, 0xFF
