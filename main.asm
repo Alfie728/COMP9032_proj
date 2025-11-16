@@ -791,7 +791,6 @@ RunStateMachine:
     ; transition to CONFIG once
     ldi workA, STATE_CONFIG
     sts DroneState, workA
-    rcall S2_BeaconTag
     rcall UpdateLCDForConfig
     ret
 rs_not_idle:
@@ -957,34 +956,6 @@ after_vis:
 no_cfg_echo:
     ret
 
-S2_BeaconTag:
-    ; Stamp S2 once at LCD tail and (optionally) flash LED bit 1
-    lds workB, StageFlags
-    sbrs workB, 1
-    rjmp s2_do
-    rjmp s2_done
-s2_do:
-    ori workB, 0x02
-    sts StageFlags, workB
-    ldi workC, 'S'
-    sts LCDLine0+13, workC
-    ldi workC, '2'
-    sts LCDLine0+14, workC
-    ; quick LED blip on PC1 (may be masked by always-on policy later)
-    ; ensure DDRC out
-    ser workA
-    out DDRC, workA
-    ; set bit1 momentarily
-    in workA, PORTC
-    ori workA, 0x02
-    out PORTC, workA
-    ; brief delay
-    ldi temp7, low(10000)
-    ldi temp8, high(10000)
-    delay
-    ; restore (leave LEDs on policy to DriveOutputs)
-    s2_done:
-    ret
 
 ; S3: process keypad input for config editing
 ProcessConfigKey:
