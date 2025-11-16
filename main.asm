@@ -961,7 +961,7 @@ vis_underscore:
     ldi workC, '_'
     sts LCDLine1+7, workC
 after_vis:
-    ; If all three fields set (bits 0..2), echo "x,y,d" at line1[8..12]
+    ; If all three fields set (bits 0..2), echo "x , y , d" at line1[8..14]
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
@@ -971,22 +971,29 @@ after_vis:
     lds workE, AccidentX
     add workE, workC
     sts LCDLine1+8, workE
-    ; comma
-    ldi workE, ','
+    ; space-comma-space
+    ldi workE, ' '
     sts LCDLine1+9, workE
+    ldi workE, ','
+    sts LCDLine1+10, workE
+    ldi workE, ' '
+    sts LCDLine1+11, workE
     ; Y
     lds workE, AccidentY
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+10, workE
-    ; comma
+    sts LCDLine1+12, workE
+    ; space-comma-space
+    ldi workE, ' '
+    sts LCDLine1+13, workE
     ldi workE, ','
-    sts LCDLine1+11, workE
-    ; Visibility
+    sts LCDLine1+14, workE
+    ; NOTE: we do not write a trailing space; last two columns are S2/S3 tags
+    ; Visibility (will appear before tags)
     lds workE, Visibility
     ldi workC, '0'
     add workE, workC
-    sts LCDLine1+12, workE
+    sts LCDLine1+15, workE
 no_cfg_echo:
     ret
 
