@@ -166,6 +166,58 @@ Timer0 runs with `clk/64` prescaler; the spinner uses bit 7 of `ScrollTimer`. Ch
 
 ---
 
+## Part 2 Implementation Plan (with Stage Beacons)
+
+We will implement Part 2 in small, verifiable stages. Each stage adds a visible indicator (a stage beacon) so it’s obvious on hardware that the new function is wired correctly before progressing.
+
+Stage beacon convention
+- LED: briefly light one specific bit on `PORTC` for the stage number (PC0..PC7).
+- LCD: optionally render a short stage tag at the end of line 1 (columns 13–15), e.g. `S1`, `S2`, etc.
+- Keep the existing heartbeat and the final init success beacon; stage beacons are brief, one‑shot cues when entering the stage or completing its action.
+
+Stages
+1) S1 — Key echo baseline
+   - Show last key pressed at `LCDLine1[0]`.
+   - On first detected keypress, flash PC0 once and print `S1` at line1[13..14].
+
+2) S2 — Config screen scaffold
+   - Enter `STATE_CONFIG` automatically after init.
+   - Render two lines: `loc:(x,y)` and `visib: d` using temporary defaults.
+   - On first render in `STATE_CONFIG`, flash PC1 and print `S2`.
+
+3) S3 — Cursor + editing flow
+   - Use digits to edit `(x,y,d)`; use `*` and `#` to move cursor/confirm fields.
+   - Clamp values to bounds (x,y in 0..6; d in 0..9).
+   - Flash PC2 when a field is successfully confirmed; print `S3` once when cursor logic activates.
+
+4) S4 — Generate path (skeleton)
+   - Implement `ResetCoverageMap` and a stub `GenerateSearchPath` that produces a trivial but valid `ObservationPath` (e.g., 1–2 points).
+   - Flash PC3 after `GenerateSearchPath` returns non‑empty; print `S4`.
+
+5) S5 — Format + scroll preview
+   - Implement `PreparePathScrollData` and `UpdateLCDForScroll`.
+   - Drive `STATE_SCROLL_PATH` preview using `AdvanceScrollWindow`.
+   - Flash PC4 on first entry into scroll; print `S5`.
+
+6) S6 — Playback stepper
+   - Implement `BeginPlaybackRun`, `AdvancePlaybackStep`, `UpdateLCDForPlayback`.
+   - Use fixed altitude/speed (61/2) as per Part 2 scope.
+   - Flash PC5 when playback starts; print `S6`.
+
+7) S7 — Done state
+   - Implement `HandleDoneState` to show final point + accident flag.
+   - Flash PC6 upon entering done; print `S7`.
+
+8) S8 — Button bindings + polish
+   - PB0: generate path; PB1: start playback; improve error handling.
+   - Flash PC7 after both bindings fire successfully; print `S8`.
+
+Notes
+- Stage beacons are intentionally brief; they should not interfere with the heartbeat or the LCD text.
+- As stages complete, we can remove the stage tags or keep them for service diagnostics.
+
+---
+
 ## TODO Checklist (Part 1 and Part 2)
 
 Part 1 — Platform Services
@@ -199,6 +251,16 @@ State machine scaffold
 - [ ] Implement `HandleScrollState`
 - [ ] Implement `HandlePlaybackState`
 - [ ] Implement `HandleDoneState`
+
+Stage beacons and incremental bring‑up
+- [x] S1 Key echo baseline — show last key at `LCDLine1[0]`; flash PC0; tag `S1` (implemented in SampleInputs/DriveOutputs)
+- [ ] S2 Config screen scaffold — enter `STATE_CONFIG` and render two lines; flash PC1; tag `S2`
+- [ ] S3 Cursor + editing — digits edit `(x,y,d)`; confirm with `*`/`#`; flash PC2; tag `S3`
+- [ ] S4 Generate path (skeleton) — minimal `ObservationPath`; flash PC3; tag `S4`
+- [ ] S5 Scroll preview — format and scroll list; flash PC4; tag `S5`
+- [ ] S6 Playback stepper — fixed 61/2; flash PC5; tag `S6`
+- [ ] S7 Done state — final display; flash PC6; tag `S7`
+- [ ] S8 Buttons + polish — PB0/PB1 bound; flash PC7; tag `S8`
 
 Config entry and rendering
 - [ ] Cursor‑based editing for `(AccidentX, AccidentY, Visibility)` via keypad

@@ -189,6 +189,9 @@ FlashTimer:            .byte 1
 KeypadSnapshot:        .byte 1
 KeypadHold:            .byte 1
 ButtonSnapshot:        .byte 1
+; ----- Stage indicators / debug -----
+LastKeyEcho:           .byte 1          ; last ASCII key seen (for S1)
+StageFlags:            .byte 1          ; bit0 = S1 done, others reserved
 
 	; ----- Part 2: user configuration -----
 AccidentX:             .byte 1
@@ -447,6 +450,26 @@ SampleInputs:
 	andi workA, (PB0_MASK | PB1_MASK)
 	mov temp0, workA
 	sts ButtonSnapshot, temp0
+
+	; ----- S1: key echo baseline -----
+	; If there is a new KeypadSnapshot event, store it as LastKeyEcho and
+	; stamp the 'S1' tag once (bit0 in StageFlags ensures one-shot).
+	lds temp0, KeypadSnapshot
+	cpi temp0, 0
+	breq s1_skip_update
+	sts LastKeyEcho, temp0
+	lds temp1, StageFlags
+	sbrs temp1, 0
+	rjmp s1_set_tag
+	rjmp s1_skip_update
+s1_set_tag:
+	ori temp1, 1
+	sts StageFlags, temp1
+	ldi workA, 'S'
+	sts LCDLine1+13, workA
+	ldi workA, '1'
+	sts LCDLine1+14, workA
+s1_skip_update:
 	ret
 
 DriveOutputs:
@@ -460,6 +483,14 @@ hb_minus:
 		ldi workC, '-'
 hb_store:
 	    sts LCDLine0, workC
+
+	    ; S1: show last key pressed at LCD line1[0]
+	    lds workA, LastKeyEcho
+	    cpi workA, 0
+	    brne s1_echo_ok
+	    ldi workA, ' '
+s1_echo_ok:
+	    sts LCDLine1, workA
 
 	    ; Push LCD buffers to the display
 		rcall LcdWriteBuffer
