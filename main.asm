@@ -183,6 +183,49 @@ load_byte_from_data_end:
 	pop yh
 .endmacro
 
+;int count_diff(c_vis, p_vis, int length, Rd)
+;Description: Count the difference between two vis arrays
+;r16: c_vis[j][i] r17: p_vis[j][i], r18: counter, Rd != r16/r17
+.macro count_diff
+	push yh
+	push yl
+	push xh
+	push xl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+	push r18
+
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	ldi xh, high(@1)
+	ldi xl, low(@1)
+	clr r18
+	clr @3
+count_diff_cond:
+	cpi r18, @2
+	brsh count_diff_end
+	ld r16, y+
+	ld r17, x+
+	cp r16, r17
+	breq count_diff_same
+	inc @3
+count_diff_same:
+	inc r18
+	rjmp count_diff_cond
+count_diff_end:
+	pop r18
+	pop r17
+	pop r16
+	out SREG, r16
+	pop	r16
+	pop xl
+	pop xh
+	pop yl
+	pop yh
+.endmacro
+
 ; ------------------------------------------------------------------------------
 ; Data memory layout
 ; ------------------------------------------------------------------------------
