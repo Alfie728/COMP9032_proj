@@ -262,6 +262,7 @@ FlashTimer:            .byte 1
 KeypadSnapshot:        .byte 1
 KeypadHold:            .byte 1
 ButtonSnapshot:        .byte 1
+ScrollRequest:         .byte 1          ; set when 'A' requests S4 preview
 ; ----- Stage indicators / debug -----
 LastKeyEcho:           .byte 1          ; last ASCII key seen (for S1)
 StageFlags:            .byte 1          ; bit0 = S1 done, others reserved
@@ -478,6 +479,7 @@ InitStateMachine:
 	sts KeypadSnapshot, temp0
 	sts KeypadHold, temp0
 	sts ButtonSnapshot, temp0
+	sts ScrollRequest, temp0
 	sts AccidentX, temp0
 	sts AccidentY, temp0
 	sts Visibility, temp0
@@ -776,9 +778,13 @@ row_loop:
     lsr workE
     rjmp row_loop
 have_row:
-    ; ignore letter column 3
+    ; letter column (col 3) only recognises 'A' (row 0) for scroll trigger
     cpi workB, 3
-    breq scan_exit_none
+    brne scan_digit_cols
+    cpi workD, 0
+    breq sym_a_key
+    rjmp scan_exit_none
+scan_digit_cols:
     ; map to ASCII
     cpi workD, 3
     breq sym_row
@@ -806,6 +812,9 @@ sym_zero:
     rjmp scan_exit
 sym_pound:
     ldi workG, '#'
+    rjmp scan_exit
+sym_a_key:
+    ldi workG, 'A'
     rjmp scan_exit
 next_column:
     lsl workC                   ; next column
@@ -910,33 +919,17 @@ HandleIdleState:
     ret
 
 HandleConfigState:
-    ; If all three fields are set and S4 not yet stamped, run minimal path gen
+    ; Only proceed to path generation once all fields confirmed and 'A' pressed
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
-    brne hc_check_pb0
-    ; all set; if S4 not set, build path and mark S4
-    lds workB, StageFlags
-    sbrs workB, 3
-    rjmp hc_do_s4
-    rjmp hc_check_pb0
-hc_do_s4:
-    rcall ResetCoverageMap
-    rcall GenerateSearchPath
-    lds workA, PathLength
-    cpi workA, 0
-    breq hc_check_pb0
-    ori workB, (1<<3)
-    sts StageFlags, workB
-    ; auto-transition to scroll
-    ldi workA, STATE_SCROLL_PATH
-    sts DroneState, workA
-    ret
-hc_check_pb0:
-    ; If PB0 pressed, transition to path generation state (will go to scroll)
-    lds workB, ButtonSnapshot
-    sbrs workB, 0              ; PB0 bit
-    rjmp hc_render
+    brne hc_render
+    ; all set: wait for keypad 'A' to request scroll preview
+    lds workB, ScrollRequest
+    tst workB
+    breq hc_render
+    clr workB
+    sts ScrollRequest, workB
     ldi workA, STATE_PATH_GEN
     sts DroneState, workA
     ret
@@ -1280,6 +1273,7 @@ stamp_done:
 ProcessConfigKey:
     ; workA holds the ASCII key from KeypadSnapshot
     ; '#' advances cursor; digits set current field; '*' clears current field
+    ; 'A' requests the S4 scroll preview once all fields locked in
     ; Cursor mapping: 0=X, 1=Y, 2=Visibility
     ; '#' advances, '*' clears (use near branches + rjmp for long targets)
     cpi workA, '#'
@@ -1290,6 +1284,10 @@ key_not_hash:
     brne key_not_star
     rjmp cfg_clear
 key_not_star:
+    cpi workA, 'A'
+    brne key_not_a
+    rjmp cfg_request_scroll
+key_not_a:
     ; digits '0'..'9' gate using near branches
     cpi workA, '0'
     brsh cfg_digit_ge0        ; if >= '0' continue
@@ -1499,6 +1497,15 @@ cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
 cfg_ret:          ; common return
     ret
+cfg_request_scroll:
+    ; Only honour 'A' when all three fields committed
+    lds workB, ConfigFlags
+    andi workB, 0x07
+    cpi workB, 0x07
+    brne cfg_ret
+    ldi workB, 1
+    sts ScrollRequest, workB
+    rjmp cfg_ret
 
 ; =============================================================================
 ; Part 3: Terrain modelling and search-path generation
