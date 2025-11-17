@@ -253,8 +253,9 @@ count_diff_end:
 	in r25, SREG
 	push r25
 
-	; counter = 0
+	; counter = 1
 	clr r6
+	inc r6
 greedy_search_start:
 	; max_diff = 0
 	clr r2
