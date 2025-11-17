@@ -1,117 +1,54 @@
-整体流程（COMP9032 Project 2025）
+# COMP9032 Project — Feature Checklist & Flow
 
-# 1. 山峰生成（H 矩阵）
-
-- [ ] 生成二维高度矩阵 H[x][y]
-- [ ] 至少 3 个不同高度的山峰
-- [ ] 至少 4 个非边界山谷
-- [ ] 山体必须连续，不断层
-- [ ] 建筑块可重叠（如金字塔、锥体、三角锥、截头体）
-- [ ] 生成 7×7 / 10×10 / 15×15 的矩阵
-- [ ] 将最终 H 矩阵写入程序中
+## 1. Input Phase
+- [x] Input accident scene & visibility distance  
+  - Display input values on LCD
+- Push buttons PB0/PB1 live on the lab board's PORTD header (RDX4/RDX3). No wiring is required on PORTB.
 
 ---
 
-# 2. 输入阶段（Reset 后）
-
-- [ ] 用户输入事故位置 (xa, ya)
-- [ ] 用户输入可视距离 d
-- [ ] LCD 第一行显示事故位置
-- [ ] LCD 第二行显示可视距离（均为两字符）
-
----
-
-# 3. 搜索路径生成（PB0）
-
-- [ ] 计算每个点的可见区域（距离 + 遮挡）
-- [ ] 初始化未覆盖点集合
-- [ ] 选择能覆盖最多未覆盖点的观察点
-- [ ] 将观察点加入路径
-- [ ] 标记可见点为已覆盖
-- [ ] 重复直到覆盖全部点
-- [ ] LCD 自动滚动显示完整路径
+## 2. Generate Search Path (PB0)
+- [ ] **Press PB0** to generate search path
+- [ ] **Search Path Display on LCD**
+  - First line: full generated search path  
+  - Sequence scrolls **right → left**
 
 ---
 
-# 4. 启动人工搜索飞行（PB1）
+## 3. Start Search (PB1)
+- [ ] **PB1: Begin search simulation**
 
-- [ ] 无人机定位到第一个观察点
-- [ ] 设置高度为该点的地表高度
-- [ ] 设置初始速度为 0
-- [ ] 自动水平移动到下一个观察点
+### Display During Search
+- [ ] **First line:**  
+  - A segment of the search path, beginning with the **current observation point**  
+  - Updated when drone flies to the next observation point  
 
-## 用户控制（Keypad）
-
-- [ ] Ua：上升
-- [ ] Da：下降
-- [ ] Us：加速
-- [ ] Ds：减速
-- [ ] Pause：暂停/恢复
-
-## LCD 显示（飞行中）
-
-- [ ] 第一行显示当前及后续路径片段
-- [ ] 第二行显示状态（F / P / C）+ 高度 + 速度
+- [ ] **Second line:**  
+  - State  
+  - Altitude  
+  - Speed  
 
 ---
 
-# 5. 无人机移动模拟
+## 4. Drone Control (Keypad)
+- [ ] Control **speed** and **altitude** of drone
 
-- [ ] 使用定时器模拟时间（如真实 2 秒 = 模拟 1 秒）
-- [ ] 定时更新高度
-- [ ] 定时更新速度与位置
-- [ ] 刷新 LCD
-- [ ] 检查是否撞击
-
----
-
-# 6. 撞击检测（Crash）
-
-- [ ] 若无人机高度 < H(x, y)，判定撞击
-- [ ] LCD 显示 C
-- [ ] LED 闪烁
-- [ ] 停止飞行
-- [ ] Reset 重新开始
+### Key Assignments
+- [ ] **UA** — Altitude Up  
+- [ ] **DA** — Altitude Down  
+- [ ] **US** — Speed Up  
+- [ ] **DS** — Speed Down  
 
 ---
 
-# 7. 事故检测（Accident）
-
-- [ ] 每个观察点检查事故点是否在可视范围
-- [ ] 如果发现：显示事故位置并结束搜索
-- [ ] 如果未发现：显示 NOT FOUND 或 NF
-
----
-
-# 8. 搜索结束
-
-- [ ] 停止移动并悬停
-- [ ] LCD 显示结果（事故位置或 NF）
+## 5. After Searching
+- [ ] Display result:
+  - “Not Found” **or**  
+  - Accident location (x, y)
 
 ---
 
-# 9. 程序结构（推荐）
+## 6. LED Bar Behavior
+- [ ] LED bar is **on** when simulation starts  
+- [ ] LED bar **flashes when drone crashes**
 
-- main.asm（主逻辑）
-- visibility.asm（可视范围计算）
-- searchpath.asm（路径生成）
-- drone.asm（无人机状态机）
-- lcd.asm（LCD 模块）
-- keypad.asm（按键扫描）
-- input.asm （输入处理）
-- timers.asm（定时器）
-- crash.asm（撞击检测）
-
----
-
-# 10. 实验室演示流程（Week 10）
-
-- [ ] Reset 输入事故点与可视距离
-- [ ] PB0 生成路径并显示
-- [ ] PB1 开始飞行
-- [ ] 展示控制高度与速度
-- [ ] 展示不撞山
-- [ ] 展示事故检测
-- [ ] 7×7 / 10×10 / 15×15 三种地形测试
-
----
