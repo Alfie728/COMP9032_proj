@@ -77,11 +77,12 @@
 .equ STATE_PLAYBACK     = 4
 .equ STATE_DONE         = 5
 
-; Push buttons PB0/PB1 (lab board front panel on PORTD bits 4/3)
+; Push buttons PB0/PB1 (lab board front panel on PORTD bits 4/3, fall back to PORTB bits 0/1)
 .equ PB0_BIT            = 0
 .equ PB1_BIT            = 1
 .equ PB0_MASK           = (1<<PB0_BIT)
 .equ PB1_MASK           = (1<<PB1_BIT)
+.equ PB_PORTB_MASK      = 0b00000011      ; optional connections on PORTB bits 0/1
 .equ PB_PORTD_MASK      = 0b00011000      ; physical bits on PORTD
 
 ; Keypad wiring constants (reuse from lab references once finalised)
@@ -268,6 +269,7 @@ FlashTimer:            .byte 1
 KeypadSnapshot:        .byte 1
 KeypadHold:            .byte 1
 ButtonSnapshot:        .byte 1
+ButtonHold:            .byte 1
 ; ----- Stage indicators / debug -----
 LastKeyEcho:           .byte 1          ; last ASCII key seen (for S1)
 StageFlags:            .byte 1          ; bit0 = S1 done, others reserved
@@ -407,7 +409,13 @@ InitIOPorts:
 	ldi workA, INIT_COL_MASK
 	sts PORTL, workA
 
-	; Push buttons PB0 / PB1 (PORTD bits 4/3) as inputs with pull-ups
+	; Push buttons PB0 / PB1 (PORTB bits 0/1 and PORTD bits 4/3) as inputs with pull-ups
+	in workA, DDRB
+	andi workA, 0xFC
+	out DDRB, workA
+	in workA, PORTB
+	ori workA, PB_PORTB_MASK
+	out PORTB, workA
 	in workA, DDRD
 	andi workA, 0xE7
 	out DDRD, workA
@@ -489,6 +497,7 @@ InitStateMachine:
 	sts KeypadSnapshot, temp0
 	sts KeypadHold, temp0
 	sts ButtonSnapshot, temp0
+	sts ButtonHold, temp0
 	sts AccidentX, temp0
 	sts AccidentY, temp0
 	sts Visibility, temp0
@@ -544,15 +553,27 @@ SampleInputs:
     rcall ScanKeypad         ; returns ASCII in workG or 0 if none
     rcall LatchKeyEvent
 
-	; Sample PB buttons from PORTD bits 4/3 (active low)
+	; Sample PB buttons from PORTB bits0/1 and PORTD bits4/3 (active low), latch new presses
 	clr workA
+	in temp0, PINB
+	com temp0
+	sbrc temp0, 0
+		ori workA, (1<<PB0_BIT)
+	sbrc temp0, 1
+		ori workA, (1<<PB1_BIT)
 	in temp0, PIND
 	com temp0
 	sbrc temp0, 4
 		ori workA, (1<<PB0_BIT)
 	sbrc temp0, 3
 		ori workA, (1<<PB1_BIT)
-	sts ButtonSnapshot, workA
+	lds temp1, ButtonHold
+	mov temp2, temp1
+	com temp2                ; ~previous state
+	mov temp3, workA
+	and temp3, temp2         ; newly pressed bits
+	sts ButtonSnapshot, temp3
+	sts ButtonHold, workA
 
     ; ----- S1: key echo baseline -----
     ; If there is a new KeypadSnapshot event, store it as LastKeyEcho and
@@ -772,8 +793,10 @@ ScanKeypad:
     clr workB                  ; col index (0..3)
     clr workG                  ; default: no key
 scan_column_loop:
-    cpi workB, 4
-    breq scan_exit_none
+cpi workB, 4
+brne scan_col_ok
+rjmp scan_exit_none
+scan_col_ok:
     sts PORTL, workC           ; drive this column low, others high; rows pulled up
     ldi temp7, KEYPAD_SETTLE_LO
     ldi temp8, KEYPAD_SETTLE_HI
@@ -792,9 +815,10 @@ row_loop:
     lsr workE
     rjmp row_loop
 have_row:
-    ; ignore letter column 3
     cpi workB, 3
-    breq scan_exit_none
+    brne not_letter
+    rjmp letter_column
+not_letter:
     ; map to ASCII
     cpi workD, 3
     breq sym_row
@@ -822,6 +846,28 @@ sym_zero:
     rjmp scan_exit
 sym_pound:
     ldi workG, '#'
+    rjmp scan_exit
+letter_column:
+    cpi workD, 0
+    breq letter_a
+    cpi workD, 1
+    breq letter_b
+    cpi workD, 2
+    breq letter_c
+    cpi workD, 3
+    breq letter_d
+    rjmp scan_exit_none
+letter_a:
+    ldi workG, 'A'
+    rjmp scan_exit
+letter_b:
+    ldi workG, 'B'
+    rjmp scan_exit
+letter_c:
+    ldi workG, 'C'
+    rjmp scan_exit
+letter_d:
+    ldi workG, 'D'
     rjmp scan_exit
 next_column:
     lsl workC                   ; next column
@@ -1325,6 +1371,10 @@ key_not_hash:
     brne key_not_star
     rjmp cfg_clear
 key_not_star:
+    cpi workA, 'A'
+    brne key_not_a
+    rjmp cfg_start_path
+key_not_a:
     ; digits '0'..'9' gate using near branches
     cpi workA, '0'
     brsh cfg_digit_ge0        ; if >= '0' continue
@@ -1534,6 +1584,15 @@ cfg_refresh:      ; re-render config UI after a change
     rcall UpdateLCDForConfig
 cfg_ret:          ; common return
     ret
+cfg_start_path:
+    lds workD, ConfigFlags
+    andi workD, 0x07
+    cpi workD, 0x07
+    brne cfg_ret
+    lds workD, ButtonSnapshot
+    ori workD, PB0_MASK
+    sts ButtonSnapshot, workD
+    rjmp cfg_ret
 
 ; =============================================================================
 ; Part 3: Terrain modelling and search-path generation
