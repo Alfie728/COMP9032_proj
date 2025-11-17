@@ -148,6 +148,41 @@ load_byte_from_data_end:
 	pop yh
 .endmacro
 
+;int* array_i_j(array, int size, Rd i, Rd j)
+; Description: array[j][i]
+;Rd != r16/r17, r16: temp, r17: temp
+.macro array_i_j
+	push yh
+	push yl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	mov r16, @3
+	ldi r17, @1
+	mul r16, r17
+	mov r16, r0
+	mov r17, @2
+	neg r17
+	sub r16, r17
+	;dec r16
+	add yl, r16
+	ldi r16, 0
+	adc yh, r16
+	mov xl, yl
+	mov xh, yh
+
+	pop r17
+	pop r16
+	out SREG, r16
+	pop r16
+	pop yl
+	pop yh
+.endmacro
+
 ; ------------------------------------------------------------------------------
 ; Data memory layout
 ; ------------------------------------------------------------------------------
