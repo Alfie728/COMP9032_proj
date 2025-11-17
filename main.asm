@@ -346,6 +346,10 @@ y_for_loop_end:
 	inc r6
 	jmp greedy_search_start
 greedy_search_end:
+	ldi xh, high(obs_len)
+	ldi xl, low(obs_len)
+	st x, r6
+
 	pop r25
 	out SREG, r25
 	pop r25
@@ -394,6 +398,7 @@ max_map: .byte l3
 obs_x:	.byte l3
 obs_y:	.byte l3
 obs_z:	.byte l3
+obs_len: .byte 1
 CoverageMask:          .byte MAP_CELLS  ; 0 = unseen, 1 = covered
 ObservationPath:       .byte PATH_BUF_BYTES
 PathLength:            .byte 1          ; number of stored observation points
