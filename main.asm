@@ -346,7 +346,6 @@ y_for_loop_end:
 	inc r6
 	jmp greedy_search_start
 greedy_search_end:
-	inc r6
 	ldi xh, high(obs_len)
 	ldi xl, low(obs_len)
 	st x, r6
