@@ -44,6 +44,7 @@
 .equ MAX_OBS_POINTS     = 16           ; supports multiple coverage groups
 .equ OBS_POINT_STRIDE   = 3            ; x, y, z (height)
 .equ PATH_BUF_BYTES     = MAX_OBS_POINTS * OBS_POINT_STRIDE
+.equ PATH_BLOCK_SIZE    = (1 + PATH_BUF_BYTES)
 .equ LCD_COLS           = 16
 .equ LCD_ROWS           = 2
 .equ VISIBILITY_MAX     = 15           ; displayed in two chars
@@ -76,9 +77,12 @@
 .equ STATE_PLAYBACK     = 4
 .equ STATE_DONE         = 5
 
-; Push button bits on PINB
-.equ PB0_MASK           = 0b00000001
-.equ PB1_MASK           = 0b00000010
+; Push buttons PB0/PB1 (lab board front panel on PORTD bits 4/3)
+.equ PB0_BIT            = 0
+.equ PB1_BIT            = 1
+.equ PB0_MASK           = (1<<PB0_BIT)
+.equ PB1_MASK           = (1<<PB1_BIT)
+.equ PB_PORTD_MASK      = 0b00011000      ; physical bits on PORTD
 
 ; Keypad wiring constants (reuse from lab references once finalised)
 .equ ROWMASK            = 0x0F
@@ -403,11 +407,13 @@ InitIOPorts:
 	ldi workA, INIT_COL_MASK
 	sts PORTL, workA
 
-	; Push buttons PB0 / PB1 as inputs with pull-ups
-	cbi DDRB, 0
-	cbi DDRB, 1
-	sbi PORTB, 0
-	sbi PORTB, 1
+	; Push buttons PB0 / PB1 (PORTD bits 4/3) as inputs with pull-ups
+	in workA, DDRD
+	andi workA, 0xE7
+	out DDRD, workA
+	in workA, PORTD
+	ori workA, PB_PORTD_MASK
+	out PORTD, workA
 	ret
 
 InitLCDDriver:
@@ -538,12 +544,15 @@ SampleInputs:
     rcall ScanKeypad         ; returns ASCII in workG or 0 if none
     rcall LatchKeyEvent
 
-	in temp0, PINB
+	; Sample PB buttons from PORTD bits 4/3 (active low)
+	clr workA
+	in temp0, PIND
 	com temp0
-	mov workA, temp0
-	andi workA, (PB0_MASK | PB1_MASK)
-	mov temp0, workA
-	sts ButtonSnapshot, temp0
+	sbrc temp0, 4
+		ori workA, (1<<PB0_BIT)
+	sbrc temp0, 3
+		ori workA, (1<<PB1_BIT)
+	sts ButtonSnapshot, workA
 
     ; ----- S1: key echo baseline -----
     ; If there is a new KeypadSnapshot event, store it as LastKeyEcho and
@@ -917,33 +926,13 @@ HandleIdleState:
     ret
 
 HandleConfigState:
-    ; If all three fields are set and S4 not yet stamped, run minimal path gen
+    ; PB0 triggers path generation once X/Y/Vis confirmed via '#'
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
-    brne hc_check_pb0
-    ; all set; if S4 not set, build path and mark S4
-    lds workB, StageFlags
-    sbrs workB, 3
-    rjmp hc_do_s4
-    rjmp hc_check_pb0
-hc_do_s4:
-    rcall ResetCoverageMap
-    rcall GenerateSearchPath
-    rcall PreparePathScrollData
-    lds workA, PathLength
-    cpi workA, 0
-    breq hc_check_pb0
-    ori workB, (1<<3)
-    sts StageFlags, workB
-    ; auto-transition to scroll
-    ldi workA, STATE_SCROLL_PATH
-    sts DroneState, workA
-    ret
-hc_check_pb0:
-    ; If PB0 pressed, transition to path generation state (will go to scroll)
+    brne hc_render
     lds workB, ButtonSnapshot
-    sbrs workB, 0              ; PB0 bit
+    sbrs workB, PB0_BIT        ; PB0 bit
     rjmp hc_render
     ldi workA, STATE_PATH_GEN
     sts DroneState, workA
@@ -1576,29 +1565,91 @@ rcm_loop:
 	ret
 
 GenerateSearchPath:
-	; Build a trivial non-empty path: (X,Y,0) and (X,Y,Vis)
+	; Copy precomputed greedy path for current visibility into ObservationPath
 	push YL
 	push YH
+	push ZL
+	push ZH
+	push workA
+	push workB
+	push workC
+	push workD
+	push workE
+	push workF
+	push temp0
+	push temp1
+	push temp2
+	push temp3
+	; Clamp visibility to 1..VISIBILITY_MAX
+	lds workA, Visibility
+	tst workA
+	brne gsp_vis_nonzero
+	ldi workA, 1
+gsp_vis_nonzero:
+	cpi workA, (VISIBILITY_MAX + 1)
+	brlo gsp_vis_clamped
+	ldi workA, VISIBILITY_MAX
+gsp_vis_clamped:
+	sts Visibility, workA
+	; offset = Visibility * PATH_BLOCK_SIZE
+	mov temp2, workA
+	ldi workC, PATH_BLOCK_SIZE
+	mov temp3, workC
+	mul temp2, temp3
+	mov temp0, r0
+	mov temp1, r1
+	clr r1
+	; Z = PrecomputedPathBlocks + offset
+	ldi ZL, low(PrecomputedPathBlocks << 1)
+	ldi ZH, high(PrecomputedPathBlocks << 1)
+	add ZL, temp0
+	adc ZH, temp1
+	; first byte = path length (cap at MAX_OBS_POINTS)
+	lpm workB, Z+
+	cpi workB, MAX_OBS_POINTS
+	brlo gsp_len_ok
+	ldi workB, MAX_OBS_POINTS
+gsp_len_ok:
+	sts PathLength, workB
+	clr workC
+	sts PathIndex, workC
+	; clear observation buffer
 	ldi YL, low(ObservationPath)
 	ldi YH, high(ObservationPath)
-	; Load current config
-	lds workC, AccidentX
-	lds workD, AccidentY
-	lds workE, Visibility
-	; Point 0: (X,Y,0)
-	st Y+, workC
-	st Y+, workD
-	clr workA
-	st Y+, workA
-	; Point 1: (X,Y,Vis)
-	st Y+, workC
-	st Y+, workD
-	st Y+, workE
-	; PathLength = 2, PathIndex=0
-	ldi workA, 2
-	sts PathLength, workA
-	clr workA
-	sts PathIndex, workA
+	ldi workE, PATH_BUF_BYTES
+	clr workF
+gsp_clear_loop:
+	st Y+, workF
+	dec workE
+	brne gsp_clear_loop
+	; copy length*OBS_POINT_STRIDE bytes from flash into buffer
+	ldi YL, low(ObservationPath)
+	ldi YH, high(ObservationPath)
+	mov workC, workB
+	mov workD, workC
+	add workD, workD          ; 2*len
+	add workD, workC          ; 3*len
+	mov workE, workD
+	tst workE
+	breq gsp_copy_done
+gsp_copy_loop:
+	lpm workF, Z+
+	st Y+, workF
+	dec workE
+	brne gsp_copy_loop
+gsp_copy_done:
+	pop temp3
+	pop temp2
+	pop temp1
+	pop temp0
+	pop workF
+	pop workE
+	pop workD
+	pop workC
+	pop workB
+	pop workA
+	pop ZH
+	pop ZL
 	pop YH
 	pop YL
 	ret
@@ -1885,6 +1936,103 @@ TIMER2_OVF_ISR:
 ;-------------------------------------------------------------------------------
 ; Program Data Definition
 ;-------------------------------------------------------------------------------
+PrecomputedPathBlocks:
+; vis=0, len=0
+.db 0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=1, len=16
+.db 16
+.db 8,2,3,8,6,3,11,5,3,12,8,1
+.db 12,11,1,13,13,1,0,7,1,0,10,1
+.db 0,13,1,2,7,3,4,12,7,6,8,5
+.db 6,11,9,7,4,3,9,4,5,9,13,5
+; vis=2, len=16
+.db 16
+.db 12,9,1,13,13,1,8,5,3,13,1,1
+.db 0,8,1,1,12,1,7,1,3,11,2,3
+.db 14,5,1,2,7,3,5,8,5,5,12,7
+.db 10,6,3,3,4,7,6,11,9,8,10,7
+; vis=3, len=16
+.db 16
+.db 6,6,5,12,10,1,5,12,7,11,3,3
+.db 2,9,3,1,2,3,6,1,3,9,8,5
+.db 10,13,3,13,2,1,0,13,1,3,3,7
+.db 12,6,3,0,4,1,12,12,1,6,10,7
+; vis=4, len=15
+.db 15
+.db 6,5,5,11,8,1,5,12,7,11,1,1
+.db 2,10,3,3,1,3,10,13,3,0,3,1
+.db 9,5,5,11,12,1,0,11,1,3,3,7
+.db 11,4,3,3,0,1,4,9,7,0,0,0
+; vis=5, len=8
+.db 8
+.db 6,9,5,11,4,3,2,2,5,11,12,1
+.db 2,10,3,9,0,1,0,0,1,2,11,3
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=6, len=6
+.db 6
+.db 7,5,3,3,11,5,11,9,1,2,3,5
+.db 9,0,1,3,14,5,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=7, len=6
+.db 6
+.db 6,7,3,10,6,3,4,14,5,0,0,1
+.db 8,14,1,7,0,1,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=8, len=3
+.db 3
+.db 7,7,3,7,14,1,7,0,1,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=9, len=3
+.db 3
+.db 7,7,3,0,6,1,9,7,3,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=10, len=3
+.db 3
+.db 7,7,3,0,4,1,8,7,3,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=11, len=1
+.db 1
+.db 6,7,3,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=12, len=1
+.db 1
+.db 5,7,3,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=13, len=1
+.db 1
+.db 4,7,3,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=14, len=1
+.db 1
+.db 3,7,3,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+; vis=15, len=1
+.db 1
+.db 1,7,1,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
+.db 0,0,0,0,0,0,0,0,0,0,0,0
 m: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 		0,2,2,2,2,2,2,2,0,0,0,0,0,0,0, \
 		0,2,4,4,4,4,4,2,2,2,2,2,2,2,2, \
