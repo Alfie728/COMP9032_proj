@@ -493,7 +493,155 @@ ResetCoverageMap:
 	ret
 
 GenerateSearchPath:
-	; TODO: observation planning loop based on visibility distance
+
+; void dfs(org_x, org_y, cur_x, cur_y, visability)
+; Description: dfs
+; r18 = org_x, r19 = org_y, r20 = cur_x, r21 = cur_y, r22 = visability, r23, r24 = temp
+dfs:
+	push yh
+	push yl
+	push xh
+	push xl
+	push r23
+	in r23, SREG
+	push r23
+	push r24
+	in yl, SPL
+	in yh, SPH
+	sbiw y, 5
+	out SPH, yh
+	out SPL, yl
+	std y+1, r18
+	std y+2, r19
+	std y+3, r20
+	std y+4, r21
+	std y+5, r22
+	
+	ldd r22, y+5
+	ldd r21, y+4
+	ldd r20, y+3
+	ldd r19, y+2
+	ldd r18, y+1
+
+	; if check[cur_y][cur_x] == 1:
+	array_i_j check, size3, r20, r21
+	ld r23, x
+	cpi r23, 1
+	in r24, SREG
+	sbrc r24, 1
+	jmp dfs_end
+
+	; if (org_x - cur_x)**2 + (org_y - cur_y)**2 + (mountain[org_y][org_x] - mountain[cur_y][cur_x])**2 <= v**2:
+	array_i_j map, size3, r18, r19
+	ld r23, x
+	array_i_j map, size3, r20, r21
+	ld r24, x
+	sub r23, r24
+	brpl positive_dz
+	neg r23
+	positive_dz:
+
+	sub r18, r20
+	brpl positive_dx
+	neg r18
+	positive_dx:
+
+	sub r19, r21
+	brpl positive_dy
+	neg r19
+	positive_dy:
+
+	mul r18, r18
+	mov r18, r0
+
+	mul r19, r19
+	mov r19, r0
+
+	mul r23, r23
+	mov r23, r0
+
+	mul r22, r22
+	mov r22, r0
+
+	add r18, r19
+	in r24, SREG
+	sbrc r24, 3
+	jmp dfs_end
+
+	add r18, r23
+	in r24, SREG
+	sbrc r24, 3
+	jmp dfs_end
+
+	cp r22, r18
+	in r24, SREG
+	sbrc r24, 0
+	jmp dfs_end
+
+	; c_vis[cur_y][cur_x] = 1
+	array_i_j c_vis, size3, r20, r21
+	ldi r23, 1
+	st x, r23
+
+	; check[cur_y][cur_x] = 1
+	array_i_j check, size3, r20, r21
+	ldi r23, 1
+	st x, r23
+
+left_if:
+	ldd r22, y+5
+	ldd r21, y+4
+	ldd r20, y+3
+	ldd r19, y+2
+	ldd r18, y+1
+	; if cur_x - 1 >= 0:
+	subi r20, 1
+	brmi right_if
+	rcall dfs
+right_if:
+	ldd r22, y+5
+	ldd r21, y+4
+	ldd r20, y+3
+	ldd r19, y+2
+	ldd r18, y+1
+	; if cur_x + 1 < len(mountain):
+	inc r20
+	cpi r20, size3
+	brsh down_if
+	rcall dfs
+down_if:
+	ldd r22, y+5
+	ldd r21, y+4
+	ldd r20, y+3
+	ldd r19, y+2
+	ldd r18, y+1
+	; if cur_y - 1 >= 0:
+	subi r21, 1
+	brmi up_if
+	rcall dfs
+up_if:
+	ldd r22, y+5
+	ldd r21, y+4
+	ldd r20, y+3
+	ldd r19, y+2
+	ldd r18, y+1
+	; if cur_y + 1 < len(mountain):
+	inc r21
+	cpi r21, size3
+	brsh dfs_end
+	rcall dfs
+dfs_end:
+	adiw y, 5
+	out SPH, yh
+	out SPL, yl
+	pop r24
+	pop r23
+	out SREG, r23
+	pop r23
+	pop xl
+	pop xh
+	pop yl
+	pop yh
 	ret
 
 FindNextObservation:
