@@ -38,6 +38,8 @@
 ; ------------------------------------------------------------------------------
 ; Constants (update once assumptions are refined)
 ; ------------------------------------------------------------------------------
+.equ size3 = 15
+.equ l3 = size3 * size3
 .equ MAP_SIZE           = 7
 .equ MAP_CELLS          = 49
 .equ MAX_OBS_POINTS     = 16           ; supports multiple coverage groups
@@ -245,7 +247,14 @@ InputCursor:           .byte 1          ; which field digit is being edited
 ConfigFlags:           .byte 1
 
 	; ----- Part 3: terrain + path data -----
-MountainMatrix:        .byte MAP_CELLS
+map:	.byte l3
+c_vis:	.byte l3
+p_vis:	.byte l3
+check:	.byte l3
+max_map: .byte l3
+obs_x:	.byte l3
+obs_y:	.byte l3
+obs_z:	.byte l3
 CoverageMask:          .byte MAP_CELLS  ; 0 = unseen, 1 = covered
 ObservationPath:       .byte PATH_BUF_BYTES
 PathLength:            .byte 1          ; number of stored observation points
