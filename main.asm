@@ -39,10 +39,10 @@
 ; ------------------------------------------------------------------------------
 ; Constants (update once assumptions are refined)
 ; ------------------------------------------------------------------------------
-.equ MAP_SIZE           = 15                 ; maximum grid 15x15
+.equ MAP_SIZE           = 15							; maximum grid 15x15
 .equ MAP_CELLS          = (MAP_SIZE*MAP_SIZE)
-.equ MAX_OBS_POINTS     = 16           ; supports multiple coverage groups
-.equ OBS_POINT_STRIDE   = 3            ; x, y, z (height)
+.equ MAX_OBS_POINTS     = (MAP_SIZE*MAP_SIZE)           ; supports multiple coverage groups
+.equ OBS_POINT_STRIDE   = 3								; x, y, z (height)
 .equ PATH_BUF_BYTES     = MAX_OBS_POINTS * OBS_POINT_STRIDE
 .equ LCD_COLS           = 16
 .equ LCD_ROWS           = 2
@@ -103,9 +103,6 @@
 ;-------------------------------------------------------------------------------
 ; Macro Definition
 ;-------------------------------------------------------------------------------
-;void load_array_from_program(program addr, data addr, int size)
-;Description: data addr <- program addr
-;r16: temp, r17: counter
 .macro load_array_from_program
 	push zh
 	push zl
@@ -138,7 +135,7 @@ load_byte_from_program_end:
 	pop zh
 .endmacro
 
-;void load_array_from_program(data addr1, data addr2, int size) 
+;void load_array_from_data(data addr1, data addr2, int length) 
 ; Description: data addr1 <- data addr2
 ;r16: temp, r17: counter
 .macro load_array_from_data
@@ -167,6 +164,256 @@ load_byte_from_data_end:
 	pop r16
 	out SREG, r16
 	pop r16
+	pop xl
+	pop xh
+	pop yl
+	pop yh
+.endmacro
+
+;int* array_i_j(array, int size, Rd i, Rd j)
+; Description: array[j][i]
+;Rd != r16/r17, r16: temp, r17: temp
+.macro array_i_j
+	push yh
+	push yl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	mov r16, @3
+	ldi r17, @1
+	mul r16, r17
+	mov r16, r0
+	mov r17, @2
+	neg r17
+	sub r16, r17
+	;dec r16
+	add yl, r16
+	ldi r16, 0
+	adc yh, r16
+	mov xl, yl
+	mov xh, yh
+
+	pop r17
+	pop r16
+	out SREG, r16
+	pop r16
+	pop yl
+	pop yh
+.endmacro
+
+
+;int* array_i(array, Rd i)
+; Description: array[j][i]
+;Rd != r16/r17, r16: temp, r17: temp
+.macro array_i
+	push yh
+	push yl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	add yl, @1
+	ldi r16, 0
+	adc yh, r16
+	mov xl, yl
+	mov xh, yh
+
+	pop r17
+	pop r16
+	out SREG, r16
+	pop r16
+	pop yl
+	pop yh
+.endmacro
+
+;int count_diff(c_vis, p_vis, int length, Rd)
+;Description: Count the difference between two vis arrays
+;r16: c_vis[j][i] r17: p_vis[j][i], r18: counter, Rd != r16/r17
+.macro count_diff
+	push yh
+	push yl
+	push xh
+	push xl
+	push r16
+	in r16, SREG
+	push r16
+	push r17
+	push r18
+
+	ldi yh, high(@0)
+	ldi yl, low(@0)
+	ldi xh, high(@1)
+	ldi xl, low(@1)
+	clr r18
+	clr @3
+count_diff_cond:
+	cpi r18, @2
+	brsh count_diff_end
+	ld r16, y+
+	ld r17, x+
+	cp r16, r17
+	breq count_diff_same
+	inc @3
+count_diff_same:
+	inc r18
+	rjmp count_diff_cond
+count_diff_end:
+	pop r18
+	pop r17
+	pop r16
+	out SREG, r16
+	pop	r16
+	pop xl
+	pop xh
+	pop yl
+	pop yh
+.endmacro
+
+; void greedy_search()
+; Description: Greedy search
+; r18 = org_x, r19 = org_y, r20 = cur_x, r21 = cur_y, r22 = visability, r2 = diff, r3 = max_diff, r4 = max_x, r5 = max_y, r6 = counter, r23 = y, r24 = x, r25 = temp
+.macro greedy_search
+	push yh
+	push yl
+	push xh
+	push xl
+
+	push r2
+	push r3
+	push r4
+	push r5
+	push r6
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	push r23
+	push r24
+	push r25
+	in r25, SREG
+	push r25
+
+	; counter = 1
+	clr r6
+	inc r6
+greedy_search_start:
+	; max_diff = 0
+	clr r2
+	clr r3
+	clr r4
+	clr r5
+	clr r23
+	clr r24
+y_for_loop:
+	; for y in range(len(mountain))
+	clr r24
+	cpi r23, size3
+	in r25, SREG
+	sbrc r25, 1
+	jmp y_for_loop_end
+	x_for_loop:
+		; for x in range(len(mountain))
+		cpi r24, size3
+		in r25, SREG
+		sbrc r25, 1
+		jmp x_for_loop_end
+		if_pre_v_y_x_eq_0:
+			; if pre_v[y][x] == 0
+			array_i_j p_vis, size3, r24, r23
+			ld r25, x
+			cpi r25, 0
+			in r25, SREG
+			sbrs r25, 1
+			jmp if_pre_v_y_x_eq_0_end
+		
+			; cur_v = [[pre_v[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+			load_array_from_data c_vis, p_vis, l3
+			; check = [[0 for _ in range(len(mountain))] for _ in range(len(mountain))]
+			load_array_from_program zeros, check, l3
+			; dfs(x, y, x, y, visability, p_index)
+			mov r18, r24
+			mov r19, r23
+			mov r20, r24
+			mov r21, r23
+			ldi r22, 3
+			call dfs
+			; diff = count_diff(cur_v, pre_v)
+			count_diff c_vis, p_vis, l3, r2
+			if_diff_g_max_diff:
+				; if diff > max_diff
+				cp r3, r2
+				in r25, SREG
+				sbrs r25, 0
+				jmp if_diff_g_max_diff_end
+				; max_diff = int(diff)
+				mov r3, r2
+				; max_point = (x, y)
+				mov r4, r24
+				mov r5, r23
+				; max_map = [[cur_v[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+				load_array_from_data max_map, c_vis, l3
+			if_diff_g_max_diff_end:
+		if_pre_v_y_x_eq_0_end:
+		; x++
+		inc r24
+		rjmp x_for_loop
+	x_for_loop_end:
+	; y++
+	inc r23
+	rjmp y_for_loop
+y_for_loop_end:
+	; if max_diff == 0: break
+	ldi r25, 0
+	cp r3, r25
+	breq greedy_search_end
+	; point.append(max_point)
+	ldi xh, high(obs_x)
+	ldi xl, low(obs_x)
+	add xl, r6
+	ldi r25, 0
+	adc xh, r25
+	st x, r4
+
+	ldi xh, high(obs_y)
+	ldi xl, low(obs_y)
+	add xl, r6
+	ldi r25, 0
+	adc xh, r25
+	st x, r5
+	; pre_v = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+	load_array_from_data p_vis, max_map, l3
+	;counter++
+	inc r6
+	jmp greedy_search_start
+greedy_search_end:
+	inc r6
+	ldi xh, high(obs_len)
+	ldi xl, low(obs_len)
+	st x, r6
+
+	pop r25
+	out SREG, r25
+	pop r25
+	pop r24
+	pop r23
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r6
+	pop r5
+	pop r4
+	pop r3
+	pop r2
 	pop xl
 	pop xh
 	pop yl
@@ -281,8 +528,14 @@ VEditVal:              .byte 1
 VEditCnt:              .byte 1
 
 	; ----- Part 3: terrain + path data -----
-MountainMatrix:        .byte MAP_CELLS
-CoverageMask:          .byte MAP_CELLS  ; 0 = unseen, 1 = covered
+MountainMatrix:			.byte MAP_CELLS
+Cur_CoverageMask:		.byte MAP_CELLS
+CoverageMask:			.byte MAP_CELLS  ; 0 = unseen, 1 = covered
+check:	.byte MAP_CELLS
+max_map: .byte MAP_CELLS
+obs_x:	.byte MAP_CELLS
+obs_y:	.byte MAP_CELLS
+
 ObservationPath:       .byte PATH_BUF_BYTES
 PathLength:            .byte 1          ; number of stored observation points
 PathIndex:             .byte 1          ; active observation point
@@ -1787,21 +2040,21 @@ m: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
-v: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+zeros: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 ; ==============================================================================
 ; End of stub
