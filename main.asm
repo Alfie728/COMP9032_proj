@@ -1758,28 +1758,13 @@ cfg_ret:          ; common return
 ; =============================================================================
 
 BuildMountainModel:
-	; TODO: populate MountainMatrix with chosen primitive shapes
+	load_array_from_program m, MountainMatrix, MAP_SIZE
 	ret
 
 ResetCoverageMap:
 	; Clear CoverageMask array and path indices
-	push YL
-	push YH
-	clr workA
-	; Clear CoverageMask[MAP_CELLS]
-	ldi YL, low(CoverageMask)
-	ldi YH, high(CoverageMask)
-	ldi workB, MAP_CELLS
-rcm_loop:
-	st Y+, workA
-	dec workB
-	brne rcm_loop
-	; Zero path meta
-	sts PathLength, workA
-	sts PathIndex, workA
-	sts ScrollHead, workA
-	pop YH
-	pop YL
+	load_array_from_program zeros, Cur_CoverageMask, MAP_SIZE
+	load_array_from_program zeros, CoverageMask, MAP_SIZE
 	ret
 
 GenerateSearchPath:
