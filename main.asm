@@ -1818,6 +1818,93 @@ ResetCoverageMap:
 	load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
 	ret
 
+; void search(org_x, org_y)
+; Description: search all light path
+; r2 = org_x, r3 = org_y, r4 = v, r18 = x, r19 = y, r20 = des_x, r21 = des_y, r22 = temp
+Search:
+	push xh
+	push xl
+	push r2
+	push r3
+	push r4
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	in r22, SREG
+	push r22
+
+	;cur_cover[start[1]][start[0]] = 1
+	array_i_j Cur_CoverageMask, MAP_SIZE, r2, r3
+	ldi r22, 1
+	st x, r22
+
+	ldi xh, high(Visibility)
+	ldi xl, low(Visibility)
+	ld r4, x
+
+	mov r19, r4
+	neg r19
+	search_y_for_loop:
+	; for y in range(-v, v + 1):
+		cp r4, r19
+		brlt search_y_for_loop_end
+		mov r18, r4
+		neg r18
+		search_x_for_loop:
+		; for x in range(-v, v + 1):
+			cp r4, r18
+			brlt search_x_for_loop_end
+			; des_x = start[0] + x
+			mov r20, r2
+			add r20, r18
+			; des_y = start[1] + y
+			mov r21, r3
+			add r21, r19
+			if_not_in_array:
+			; if 0 <= des_x < len(mountain) and 0 <= des_y < len(mountain):
+				cpi r20, 0
+				brlt if_not_in_array_end
+				cpi r20, MAP_SIZE
+				brge if_not_in_array_end
+				cpi r21, 0
+				brlt if_not_in_array_end
+				cpi r21, MAP_SIZE
+				brge if_not_in_array_end
+				if_cur_cover_eq_0:
+				; if cur_cover[des_y][des_x] == 0:
+					array_i_j Cur_CoverageMask, MAP_SIZE, r20, r21
+					ld r22, x
+					cpi r22, 0
+					brne if_cur_cover_eq_0_end
+					mov r6, r20
+					mov r7, r21
+					rcall Light_path
+				if_cur_cover_eq_0_end:
+			if_not_in_array_end:
+			inc r18
+			jmp search_x_for_loop
+		search_x_for_loop_end:
+		inc r19
+		jmp search_y_for_loop
+	search_y_for_loop_end:
+
+	pop r22
+	out SREG, r22
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r4
+	pop r3
+	pop r2
+	pop xl
+	pop xh
+	reti
+
+
 ; void Light_path(org_x, org_y, des_x, des_y)
 ; Description: Scan like light
 ; r2 = org_x, r3 = org_y, r4 = cur_x, r5 = cur_y, r6 = des_x, r7 = des_y, r8 = l, r18 = cur_grad_nu, r19 = cur_grad_de, r20 = max_grad_nu, r21 = max_grad_de , r22, r23, r24, r25= temp
