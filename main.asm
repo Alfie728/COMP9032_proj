@@ -105,6 +105,9 @@
 ;-------------------------------------------------------------------------------
 ; Macro Definition
 ;-------------------------------------------------------------------------------
+;void load_array_from_program(program addr, data addr, int length)
+;Description: data addr <- program addr
+;r16: temp, r17: counter
 .macro load_array_from_program
 	push zh
 	push zl
@@ -532,7 +535,7 @@ VEditCnt:              .byte 1
 	; ----- Part 3: terrain + path data -----
 MountainMatrix:			.byte MAP_CELLS
 Cur_CoverageMask:		.byte MAP_CELLS
-CoverageMask:			.byte MAP_CELLS  ; 0 = unseen, 1 = covered
+Pre_CoverageMask:			.byte MAP_CELLS  ; 0 = unseen, 1 = covered
 check:	.byte MAP_CELLS
 max_map: .byte MAP_CELLS
 obs_x:	.byte MAP_CELLS
@@ -608,6 +611,8 @@ MainLoop:
     rcall SampleInputs        ; read buttons/keypad, update snapshots
     rcall RunStateMachine     ; central dispatcher using DroneState (stubbed)
     rcall DriveOutputs        ; LCD heartbeat + LED bar
+	rcall BuildMountainModel
+	rcall ResetCoverageMap
     rjmp MainLoop
 
 ; ==============================================================================
@@ -1804,13 +1809,243 @@ cfg_ret:          ; common return
 ; =============================================================================
 
 BuildMountainModel:
-	load_array_from_program m, MountainMatrix, MAP_SIZE
+	load_array_from_program m, MountainMatrix, MAP_CELLS
 	ret
 
 ResetCoverageMap:
 	; Clear CoverageMask array and path indices
-	load_array_from_program zeros, Cur_CoverageMask, MAP_SIZE
-	load_array_from_program zeros, CoverageMask, MAP_SIZE
+	load_array_from_program zeros, Cur_CoverageMask, MAP_CELLS
+	load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
+	ret
+
+; void Light_path(org_x, org_y, des_x, des_y)
+; Description: Scan like light
+; r2 = org_x, r3 = org_y, r4 = cur_x, r5 = cur_y, r6 = des_x, r7 = des_y, r8 = l, r18 = cur_grad_nu, r19 = cur_grad_de, r20 = max_grad_nu, r21 = max_grad_de , r22, r23, r24, r25= temp
+Light_path:
+	push xh
+	push xl
+	push r2
+	push r3
+	push r4
+	push r5
+	push r6
+	push r7
+	push r8
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	in r22, SREG
+	push r22
+	push r23
+	push r24
+	push r25
+
+	; cur_x = int(org_x)
+	mov r4, r2
+	; cur_y = int(org_y)
+	mov r5, r3
+	; max_grad_nu = -8
+	ldi r22, -8
+	mov r20, r22
+    ; max_grad_de = 1
+	ldi r22, 1
+	mov r21, r22
+	; l = np.int8(0)
+	clr r8
+	light_while:
+	;while cur_x != des_x or cur_y != des_y:
+		cp r6, r4
+		brne light_while_body
+		cp r7, r5
+		brne light_while_body
+		jmp light_while_end
+	light_while_body:
+		if_cur_x_g_des_x:
+		; if cur_x > des_x:
+			cp r6, r4
+			brsh if_cur_x_g_des_x_end
+			;cur_x = cur_x - 1
+			dec r4
+			if_cur_y_des_y_1:
+			; if cur_y > des_y:
+				cp r7, r5
+				brsh if_cur_y_des_y_1_elif
+				;cur_y = cur_y - 1
+				dec r5
+				rjmp if_cur_y_des_y_1_end
+			if_cur_y_des_y_1_elif:
+			; elif cur_y < des_y:
+				cp r5, r7
+				brsh if_cur_y_des_y_1_end
+				; cur_y = cur_y + 1
+				inc r5
+			if_cur_y_des_y_1_end:
+			jmp light_if_end
+		if_cur_x_g_des_x_end:
+
+		if_cur_x_lo_des_x:
+		; elif cur_x < des_x:
+			cp r4, r6
+			brsh if_cur_x_lo_des_x_end
+			;cur_x = cur_x + 1
+			inc r4
+			if_cur_y_des_y_2:
+			; if cur_y > des_y:
+				cp r7, r5
+				brsh if_cur_y_des_y_2_elif
+				;cur_y = cur_y - 1
+				dec r5
+				rjmp if_cur_y_des_y_2_end
+			if_cur_y_des_y_2_elif:
+			; elif cur_y < des_y:
+				cp r5, r7
+				brsh if_cur_y_des_y_2_end
+				; cur_y = cur_y + 1
+				inc r5
+			if_cur_y_des_y_2_end:
+			jmp light_if_end
+		if_cur_x_lo_des_x_end:
+
+		if_cur_x_des_x_else:
+			if_cur_y_des_y_3:
+				; if cur_y > des_y:
+				cp r7, r5
+				brsh if_cur_y_des_y_3_elif
+				;cur_y = cur_y - 1
+				dec r5
+				rjmp if_cur_y_des_y_3_end
+			if_cur_y_des_y_3_elif:
+			; elif cur_y < des_y:
+				cp r5, r7
+				brsh if_cur_y_des_y_3_end
+				; cur_y = cur_y + 1
+				inc r5
+			if_cur_y_des_y_3_end:
+		if_cur_x_des_x_else_end:
+		light_if_end:
+		;l = l + 1
+		inc r8
+
+		; cur_grad_nu = np.int8(mountain[cur_y][cur_x] - mountain[org_y][org_x])
+		array_i_j MountainMatrix, MAP_SIZE, r4, r5
+		ld r18, x
+		array_i_j MountainMatrix, MAP_SIZE, r2, r3
+		ld r22, x
+		sub r18, r22
+		; cur_grad_de = np.int8(l)
+		mov r19, r8
+
+	if_cur_grad_great_max_grad:
+		; if cur_grad_nu * max_grad_de >= cur_grad_de * max_grad_nu:
+		muls r18, r21
+		mov r22, r0
+		muls r19, r20
+		mov r23, r0
+		cp r22, r23
+		brlt if_cur_grad_great_max_grad_end
+		; max_grad_nu = np.int8(cur_grad_nu)
+		mov r20, r18
+		; max_grad_de = np.int8(cur_grad_de)
+		mov r21, r19
+	if_cur_grad_great_max_grad_end:
+	if_cur_grad_sh_max_grad:
+		;if cur_grad_nu * max_grad_de >= max_grad_nu * cur_grad_de:
+		muls r18, r21
+		mov r22, r0
+		muls r19, r20
+		mov r23, r0
+		cp r22, r23
+		
+		in r24, SREG
+		in r25, SREG
+		lsr r25
+		eor r24, r25
+		sbrc r24, 2
+		jmp if_cur_grad_sh_max_grad_end
+		if_visiable:
+			; v**2 >= (org_x - cur_x)**2 + (org_y - cur_y)**2 + (mountain[org_y][org_x] - mountain[cur_y][cur_x])**2:
+			array_i_j MountainMatrix, MAP_SIZE, r2, r3
+			ld r22, x
+			array_i_j MountainMatrix, MAP_SIZE, r4, r5
+			ld r23, x
+			sub r22, r23
+			brpl light_positive_dz
+			neg r22
+			light_positive_dz:
+
+			mov r23, r2
+			mov r24, r4
+			sub r23, r24
+			brpl light_positive_dx
+			neg r23
+			light_positive_dx:
+
+			mov r24, r3
+			mov r25, r5
+			sub r24, r25
+			brpl light_positive_dy
+			neg r24
+			light_positive_dy:
+
+			mul r22, r22
+			mov r22, r0
+
+			mul r23, r23
+			mov r23, r0
+
+			mul r24, r24
+			mov r24, r0
+
+			ldi xh, high(Visibility)
+			ldi xl, low(Visibility)
+			ld r25, x
+			mul r25, r25
+			mov r25, r0
+
+			add r22, r23
+			in r23, SREG
+			sbrc r23, 3
+			jmp if_cur_grad_sh_max_grad_end
+
+			add r22, r24
+			in r23, SREG
+			sbrc r23, 3
+			jmp if_cur_grad_sh_max_grad_end
+
+			cp r25, r22
+			in r23, SREG
+			sbrc r23, 0
+			jmp if_cur_grad_sh_max_grad_end
+
+			; cur_cover[cur_y][cur_x] = 1
+			array_i_j Cur_CoverageMask, MAP_SIZE, r4, r5
+			ldi r23, 1
+			st x, r23
+	if_cur_grad_sh_max_grad_end:
+		jmp light_while
+	light_while_end:
+
+	pop r25
+	pop r24
+	pop r23
+	pop r22
+	out SREG, r22
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r8
+	pop r7
+	pop r6
+	pop r5
+	pop r4
+	pop r3
+	pop r2
+	pop xl
+	pop xh
 	ret
 
 GenerateSearchPath:
