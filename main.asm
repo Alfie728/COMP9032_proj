@@ -536,10 +536,9 @@ VEditCnt:              .byte 1
 MountainMatrix:			.byte MAP_CELLS
 Cur_CoverageMask:		.byte MAP_CELLS
 Pre_CoverageMask:			.byte MAP_CELLS  ; 0 = unseen, 1 = covered
-check:	.byte MAP_CELLS
-max_map: .byte MAP_CELLS
-obs_x:	.byte MAP_CELLS
-obs_y:	.byte MAP_CELLS
+Max_CoverageMask:		.byte MAP_CELLS
+ObservationLength:		.byte 1
+ObservationPoints:		.byte PATH_BUF_BYTES
 
 ObservationPath:       .byte PATH_BUF_BYTES
 PathLength:            .byte 1          ; number of stored observation points
@@ -1816,6 +1815,128 @@ ResetCoverageMap:
 	; Clear CoverageMask array and path indices
 	load_array_from_program zeros, Cur_CoverageMask, MAP_CELLS
 	load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
+	ret
+
+; void greedy_search()
+; Description: Greedy search
+; r2 = org_x, r3 = org_y, r4 = max_x, r5 = max_y, r6 = counter, r18 = max_diff, r19 = diff, r20 = x, r21 = y, r22, r23 = temp
+Greedy_search:
+	push xh
+	push xl
+	push r2
+	push r3
+	push r4
+	push r5
+	push r6
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	push r23
+	in r23, SREG
+	push r23
+
+	; counter = 1
+	clr r6
+	inc r6
+	
+	greedy_while:
+	; while True:
+		; max_diff = 0
+		clr r18
+		clr r21
+		greedy_y_for_loop:
+		; for y in range(len(cur_cover)):
+			cpi r21, MAP_SIZE
+			in r22, SREG
+			sbrc r22, 1
+			jmp greedy_y_for_loop_end
+			clr r20
+			greedy_x_for_loop:
+			;for x in range(len(cur_cover[y])):
+				cpi r20, MAP_SIZE
+				in r22, SREG
+				sbrc r22, 1
+				jmp greedy_x_for_loop_end
+				if_pre_cov_eq_0:
+				; if pre_cover[y][x] == 0:
+					array_i_j Pre_CoverageMask, MAP_SIZE, r20, r21
+					ld r22, x
+					cpi r22, 0
+					in r22, SREG
+					sbrs r22, 1
+					jmp if_pre_cov_eq_0_end
+					; cur_cover = [[pre_cover[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+					load_array_from_data Cur_CoverageMask, Pre_CoverageMask, MAP_CELLS
+					; search((x,y))
+					mov r2, r20
+					mov r3, r21
+					rcall search
+					; diff = count_diff(cur_cover, pre_cover)
+					count_diff Cur_CoverageMask, Pre_CoverageMask, MAP_CELLS, r19
+					if_diff_g_max_diff:
+					; if diff > max_diff:
+						cp r18, r19
+						brsh if_diff_g_max_diff_end
+						mov r18, r19 ; max_diff = int(diff)
+						mov r4, r20	; max_point = (x, y)
+						mov r5, r21
+						; max_map = [[cur_cover[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+						load_array_from_data Max_CoverageMask, Cur_CoverageMask, MAP_CELLS
+					if_diff_g_max_diff_end:
+				if_pre_cov_eq_0_end:
+				inc r20
+				jmp greedy_x_for_loop
+			greedy_x_for_loop_end:
+			inc r21
+			jmp greedy_y_for_loop
+		greedy_y_for_loop_end:
+		if_max_diff_eq_0:
+			cpi r18, 0
+			in r22, SREG
+			sbrc r22, 1
+			jmp greedy_while_end
+
+		;point.append(max_point)
+		array_i_j MountainMatrix, MAP_SIZE, r4, r5
+		ld r23, x
+		ldi	xh, high(ObservationPoints)
+		ldi xl, low(ObservationPoints)
+		ldi r22, 3
+		mul r6, r22
+		add xl, r0
+		ldi r22, 0
+		adc xh, r22
+		st x+, r4
+		st x+, r5
+		st x+, r23
+		; pre_cover = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
+		load_array_from_data Pre_CoverageMask, Max_CoverageMask, MAP_CELLS
+
+		inc r6
+		jmp greedy_while
+	greedy_while_end:
+
+	ldi xh, high(ObservationLength)
+	ldi xl, low(ObservationLength)
+	st x, r6
+
+	pop r23
+	out SREG, r23
+	pop r23
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r6
+	pop r5
+	pop r4
+	pop r3
+	pop r2
+	pop xl
+	pop xh
 	ret
 
 ; void search(org_x, org_y)
