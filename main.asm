@@ -210,17 +210,15 @@ load_byte_from_data_end:
 	pop yh
 .endmacro
 
-
 ;int* array_i(array, Rd i)
-; Description: array[j][i]
-;Rd != r16/r17, r16: temp, r17: temp
+; Description: array[i]
+;Rd != r16/r17, r16: temp
 .macro array_i
 	push yh
 	push yl
 	push r16
 	in r16, SREG
 	push r16
-	push r17
 
 	ldi yh, high(@0)
 	ldi yl, low(@0)
@@ -230,7 +228,6 @@ load_byte_from_data_end:
 	mov xl, yl
 	mov xh, yh
 
-	pop r17
 	pop r16
 	out SREG, r16
 	pop r16
@@ -391,13 +388,12 @@ VEditCnt:              .byte 1
 	; ----- Part 3: terrain + path data -----
 MountainMatrix:			.byte MAP_CELLS
 Cur_CoverageMask:		.byte MAP_CELLS
-Pre_CoverageMask:			.byte MAP_CELLS  ; 0 = unseen, 1 = covered
+Pre_CoverageMask:		.byte MAP_CELLS  ; 0 = unseen, 1 = covered
 Max_CoverageMask:		.byte MAP_CELLS
-ObservationLength:		.byte 1
+PathLength:				.byte 1          ; number of stored observation points
 ObservationPoints:		.byte PATH_BUF_BYTES
-
+Visted:					.byte PATH_BUF_BYTES
 ObservationPath:       .byte PATH_BUF_BYTES
-PathLength:            .byte 1          ; number of stored observation points
 PathIndex:             .byte 1          ; active observation point
 ScrollHead:            .byte 1          ; LCD scroll pointer into path buffer
 ScrollPhase:           .byte 1          ; last observed ScrollTimer phase bit
@@ -1673,6 +1669,247 @@ ResetCoverageMap:
 	load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
 	ret
 
+; void Path_generation()
+; Description: Path_generation
+; r2 = last_x, r3 = last_y, r4 = cur_x, r5 = cur_y, r6 = des_x, r7 = des_y, r8 = PathLength, r9 = counter, r18 = i, r19 = l, r20 = min_l, r21 = min_index, r22, r23 = temp
+Path_generation:
+	push xh
+	push xl
+	push r2
+	push r3
+	push r4
+	push r5
+	push r6
+	push r7
+	push r8
+	push r9
+	push r18
+	push r19
+	push r20
+	push r21
+	push r22
+	push r23
+	in r23, SREG
+	push r23
+	
+	ldi xh, high(PathLength)
+	ldi xl, low(PathLength)
+	ld r8, x
+
+	; Visted = [0 for _ in range(len(points))]
+	load_array_from_program zeros, Visted, MAP_CELLS
+	; Visted[0] = 1
+	clr r22
+	array_i Visted, r22
+	ldi r22, 1
+	st x, r22
+
+	ldi xh, high(ObservationPoints)
+	ldi xl, low(ObservationPoints)
+	; last_x = int(points[0][0])
+	ld r2, x+
+	; last_y = int(points[0][1])
+	ld r3, x+
+	ld r22, x
+	; order = [points[0]]
+	ldi xh, high(ObservationPath)
+	ldi xl, low(ObservationPath)
+	st x+, r2
+	st x+, r3
+	st x, r22
+	; counter = 1
+	ldi r22, 1
+	mov r9, r22
+	Path_generation_while:
+	; while True
+		;min_l = 99
+		ldi r20, 99
+		;min_index = 0
+		ldi r21, 0
+		clr r18
+		path_i_for_loop:
+		; for i in range(len(points)):
+			cp r18, r8
+			in r22, SREG
+			sbrc r22, 1
+			jmp path_i_for_loop_end
+			; l = 0
+			clr r19
+			if_Visted_eq_0:
+			; if Visted[i] == 0:
+				array_i Visted, r18
+				ld r22, x
+				cpi r22, 0
+				in r22, SREG
+				sbrs r22, 1
+				jmp if_Visted_eq_0_end
+				; cur_x = int(last_x)
+				mov r4, r2
+				; cur_y = int(last_y)
+				mov r5, r3
+				; des_x = int(points[i][0])
+                ; des_y = int(points[i][1])
+				ldi xh, high(ObservationPoints)
+				ldi xl, low(ObservationPoints)
+				ldi r22, OBS_POINT_STRIDE
+				mul r18, r22
+				mov r22, r0
+				add xl, r22
+				ldi r22, 0
+				adc xh, r22 
+				ld r6, x+
+				ld r7, x
+				light_while2:
+				;while cur_x != des_x or cur_y != des_y:
+					cp r6, r4
+					brne light_while_body2
+					cp r7, r5
+					brne light_while_body2
+					jmp light_while_end2
+				light_while_body2:
+					if_cur_x_g_des_x2:
+					; if cur_x > des_x:
+						cp r6, r4
+						brsh if_cur_x_g_des_x_end2
+						;cur_x = cur_x - 1
+						dec r4
+						if_cur_y_des_y_12:
+						; if cur_y > des_y:
+							cp r7, r5
+							brsh if_cur_y_des_y_1_elif2
+							;cur_y = cur_y - 1
+							dec r5
+							rjmp if_cur_y_des_y_1_end2
+						if_cur_y_des_y_1_elif2:
+						; elif cur_y < des_y:
+							cp r5, r7
+							brsh if_cur_y_des_y_1_end2
+							; cur_y = cur_y + 1
+							inc r5
+						if_cur_y_des_y_1_end2:
+						jmp light_if_end2
+					if_cur_x_g_des_x_end2:
+
+					if_cur_x_lo_des_x2:
+					; elif cur_x < des_x:
+						cp r4, r6
+						brsh if_cur_x_lo_des_x_end2
+						;cur_x = cur_x + 1
+						inc r4
+						if_cur_y_des_y_22:
+						; if cur_y > des_y:
+							cp r7, r5
+							brsh if_cur_y_des_y_2_elif2
+							;cur_y = cur_y - 1
+							dec r5
+							rjmp if_cur_y_des_y_2_end2
+						if_cur_y_des_y_2_elif2:
+						; elif cur_y < des_y:
+							cp r5, r7
+							brsh if_cur_y_des_y_2_end2
+							; cur_y = cur_y + 1
+							inc r5
+						if_cur_y_des_y_2_end2:
+						jmp light_if_end2
+					if_cur_x_lo_des_x_end2:
+
+					if_cur_x_des_x_else2:
+						if_cur_y_des_y_32:
+							; if cur_y > des_y:
+							cp r7, r5
+							brsh if_cur_y_des_y_3_elif2
+							;cur_y = cur_y - 1
+							dec r5
+							rjmp if_cur_y_des_y_3_end2
+						if_cur_y_des_y_3_elif2:
+						; elif cur_y < des_y:
+							cp r5, r7
+							brsh if_cur_y_des_y_3_end2
+							; cur_y = cur_y + 1
+							inc r5
+						if_cur_y_des_y_3_end2:
+					if_cur_x_des_x_else_end2:
+					light_if_end2:
+					;l = l + 1
+					inc r19
+					jmp light_while2
+				light_while_end2:
+			
+				if_min_l_g_l:
+				;if min_l > l:
+					cp r19, r20
+					brsh if_min_l_g_l_end
+					; min_l = int(l)
+					mov r20, r19
+					; min_index = i
+					mov r21, r18
+				if_min_l_g_l_end:
+			if_Visted_eq_0_end:
+			inc r18
+			jmp path_i_for_loop
+		path_i_for_loop_end:
+
+		if_min_l_eq_99:
+		;if min_l == 99:
+			cpi r20, 99
+			brne if_min_l_eq_99_end
+			jmp Path_generation_while_end
+		if_min_l_eq_99_end:
+		; last_x = point[min_index][0]
+        ; last_y = point[min_index][1]
+		ldi xh, high(ObservationPoints)
+		ldi xl, low(ObservationPoints)
+		ldi r22, OBS_POINT_STRIDE
+		mul r21, r22
+		mov r22, r0
+		add xl, r22
+		ldi r22, 0
+		adc xh, r22
+		ld r2, x+
+		ld r3, x+
+		ld r23, x
+
+		; order.append(point[min_index])
+		ldi xh, high(ObservationPath)
+		ldi xl, low(ObservationPath)
+		ldi r22, OBS_POINT_STRIDE 
+		mul r9, r22
+		mov r22, r0
+		add xl, r22
+		ldi r22, 0
+		adc xh, r22
+		st x+, r2
+		st x+, r3
+		st x, r23
+		; Visted[min_index] = 1
+		array_i Visted, r21
+		ldi r22, 1
+		st x, r22
+		; counter += 1
+		inc r9
+		jmp Path_generation_while
+	Path_generation_while_end:
+
+	pop r23
+	out SREG, r23
+	pop r23
+	pop r22
+	pop r21
+	pop r20
+	pop r19
+	pop r18
+	pop r9
+	pop r8
+	pop r7
+	pop r6
+	pop r5
+	pop r4
+	pop r3
+	pop r2
+	pop xl
+	pop xh
+	ret
+
 ; void greedy_search()
 ; Description: Greedy search
 ; r2 = org_x, r3 = org_y, r4 = max_x, r5 = max_y, r6 = counter, r18 = max_diff, r19 = diff, r20 = x, r21 = y, r22, r23 = temp
@@ -1774,8 +2011,8 @@ Greedy_search:
 		jmp greedy_while
 	greedy_while_end:
 
-	ldi xh, high(ObservationLength)
-	ldi xl, low(ObservationLength)
+	ldi xh, high(PathLength)
+	ldi xl, low(PathLength)
 	st x, r6
 
 	pop r23
