@@ -412,6 +412,9 @@ ScrollPhase:           .byte 1          ; last observed ScrollTimer phase bit
 ScrollTextLen:         .byte 1          ; length of formatted scroll string
 ScrollBuffer:          .byte SCROLL_BUF_SIZE
 DebugFlags:            .byte 1          ; bit0 = scroll debug mode toggle (PB1)
+DbgSelX:               .byte 1          ; last selected X in Greedy_search
+DbgSelY:               .byte 1          ; last selected Y in Greedy_search
+DbgSelZ:               .byte 1          ; last selected Z in Greedy_search
 QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
@@ -2053,16 +2056,20 @@ Greedy_search:
 		brlo greedy_store_ok
 		rjmp greedy_while_end
 greedy_store_ok:
-		;point.append(max_point)
-		array_i_j MountainMatrix, MAP_SIZE, r4, r5
-		ld r23, x
-		ldi	xh, high(ObservationPoints)
-		ldi xl, low(ObservationPoints)
-		ldi r22, 3
-		mul r6, r22
-		add xl, r0
-		adc xh, r1
-		clr r1
+			;point.append(max_point)
+			array_i_j MountainMatrix, MAP_SIZE, r4, r5
+			ld r23, x
+			; store debug selection snapshot
+			sts DbgSelX, r4
+			sts DbgSelY, r5
+			sts DbgSelZ, r23
+			ldi	xh, high(ObservationPoints)
+			ldi xl, low(ObservationPoints)
+			ldi r22, 3
+			mul r6, r22
+			add xl, r0
+			adc xh, r1
+			clr r1
 		st x+, r4
 		st x+, r5
 		st x+, r23
@@ -2785,6 +2792,19 @@ dbg_fill1:
 	ld workD, X+
 	ld workE, X+
 	rcall dbg_print_triple_line1
+
+	; show MX (selected) snapshot in hex at end of line1 for sanity
+	ldi workA, ' '
+	sts LCDLine1+11, workA
+	ldi workA, 'M'
+	sts LCDLine1+12, workA
+	ldi workA, 'X'
+	sts LCDLine1+13, workA
+	; read DbgSelX and print as hex at [14],[15]
+	lds workA, DbgSelX
+	rcall dbg_hex_byte
+	sts LCDLine1+14, workB
+	sts LCDLine1+15, workA
 
 	; If subpage (DebugFlags bit1) set, replace both lines with hex dump
 	lds workA, DebugFlags
