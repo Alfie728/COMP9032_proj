@@ -2470,12 +2470,16 @@ pps_fill:
 	clr workF               ; i = 0
 	clr workE               ; written = 0
 pps_point_loop:
-	cp workF, workG
-	breq pps_done_points
-	; load x,y,z for this point
-	ld workA, X+    ; x
-	ld workB, X+    ; y
-	ld workC, X+    ; z
+    cp workF, workG
+    breq pps_done_points
+    ; capacity guard: each segment writes 11 bytes; if written > 53, stop
+    ldi workA, 53             ; SCROLL_BUF_SIZE - 11 (64 - 11)
+    cp workE, workA
+    brsh pps_done_points
+    ; load x,y,z for this point
+    ld workA, X+    ; x
+    ld workB, X+    ; y
+    ld workC, X+    ; z
 	; write two-digit x
 	mov workD, workA
 	ldi workA, ' '
