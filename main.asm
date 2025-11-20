@@ -2775,6 +2775,12 @@ dbg_fill1:
 	ld workE, X+
 	rcall dbg_print_triple_line1
 
+	; If subpage (DebugFlags bit1) set, replace both lines with hex dump
+	lds workA, DebugFlags
+	sbrs workA, 1
+	rjmp dbg_done
+	rcall DumpObservationHex
+dbg_done:
 	pop workF
 	pop workE
 	pop workD
@@ -2873,8 +2879,124 @@ dbg_two_digit:
 	subi workC, 10
 dbg_td_tens_done:
 	ldi workA, '0'
-	add workA, workC
+    add workA, workC
+    pop workC
+    ret
+
+; Dump same data as two-digit hex
+DumpObservationHex:
+	push workA
+	push workB
+	push workC
+	push workD
+	push workE
+	push workF
+	push XL
+	push XH
+
+	; reload P0 bytes
+	ldi XL, low(ObservationPath)
+	ldi XH, high(ObservationPath)
+	ld workC, X+
+	ld workD, X+
+	ld workE, X+
+	; header 'P0 '
+	ldi workA, 'P'
+	sts LCDLine0+0, workA
+	ldi workA, '0'
+	sts LCDLine0+1, workA
+	ldi workA, ' '
+	sts LCDLine0+2, workA
+	; print hex groups at 3..10
+	mov workA, workC
+	rcall dbg_hex_byte
+	sts LCDLine0+3, workB
+	sts LCDLine0+4, workA
+	ldi workA, ' '
+	sts LCDLine0+5, workA
+	mov workA, workD
+	rcall dbg_hex_byte
+	sts LCDLine0+6, workB
+	sts LCDLine0+7, workA
+	ldi workA, ' '
+	sts LCDLine0+8, workA
+	mov workA, workE
+	rcall dbg_hex_byte
+	sts LCDLine0+9, workB
+	sts LCDLine0+10, workA
+
+	; OP0 header 'OP '
+	ldi workA, 'O'
+	sts LCDLine1+0, workA
+	ldi workA, 'P'
+	sts LCDLine1+1, workA
+	ldi workA, ' '
+	sts LCDLine1+2, workA
+	; reload OP0 bytes
+	ldi XL, low(ObservationPoints)
+	ldi XH, high(ObservationPoints)
+	ld workC, X+
+	ld workD, X+
+	ld workE, X+
+	; print at 3..10
+	mov workA, workC
+	rcall dbg_hex_byte
+	sts LCDLine1+3, workB
+	sts LCDLine1+4, workA
+	ldi workA, ' '
+	sts LCDLine1+5, workA
+	mov workA, workD
+	rcall dbg_hex_byte
+	sts LCDLine1+6, workB
+	sts LCDLine1+7, workA
+	ldi workA, ' '
+	sts LCDLine1+8, workA
+	mov workA, workE
+	rcall dbg_hex_byte
+	sts LCDLine1+9, workB
+	sts LCDLine1+10, workA
+
+	pop XH
+	pop XL
+	pop workF
+	pop workE
+	pop workD
 	pop workC
+	pop workB
+	pop workA
+	ret
+
+; dbg_hex_byte: input workA, output workB (high nibble ASCII), workA (low nibble ASCII)
+dbg_hex_byte:
+	push workC
+	mov workC, workA
+	; high nibble
+	mov workB, workA
+	lsr workB
+	lsr workB
+	lsr workB
+	lsr workB
+	rcall dbg_nibble_to_hex
+	mov workB, workA
+	; low nibble
+	mov workA, workC
+	andi workA, 0x0F
+	rcall dbg_nibble_to_hex
+	; now workB=high hex, workA=low hex
+	pop workC
+	ret
+
+dbg_nibble_to_hex:
+	; workA in 0..15 -> ASCII '0'..'9','A'..'F'
+	cpi workA, 10
+	brlo dnh_digit
+	subi workA, 10
+	ldi workF, 'A'
+	add workA, workF
+	ret
+dnh_digit:
+	ldi workF, '0'
+	add workA, workF
 	ret
 
 ;---------------------------------
