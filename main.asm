@@ -411,6 +411,7 @@ ScrollHead:            .byte 1          ; LCD scroll pointer into path buffer
 ScrollPhase:           .byte 1          ; last observed ScrollTimer phase bit
 ScrollTextLen:         .byte 1          ; length of formatted scroll string
 ScrollBuffer:          .byte SCROLL_BUF_SIZE
+DebugFlags:            .byte 1          ; bit0 = scroll debug mode toggle (PB1)
 QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
@@ -628,6 +629,7 @@ InitStateMachine:
 	sts PlaybackIndex, temp0
     sts PlaybackTimer, temp0
     sts AccidentFoundFlag, temp0
+    sts DebugFlags, temp0
 
     ldi workA, DEFAULT_ALT_DM
     sts AltitudeDm, workA
@@ -1104,17 +1106,25 @@ hpg_done:
 		ret
 
 HandleScrollState:
-		; If PB1 pressed, show debug dump of ObservationPath instead of scrolling
-		lds workB, ButtonPressCnt1
-		sbrs workB, 0
-		rjmp hs_no_dbg
-		clr workB
-		sts ButtonPressCnt1, workB
-		rcall DumpObservationPathDebug
-		ret
-hs_no_dbg:
-		rcall UpdateLCDForScroll
-		ret
+			; Toggle debug mode on PB1 press
+			lds workB, ButtonPressCnt1
+			tst workB
+			breq hs_check_dbg
+			clr workB
+			sts ButtonPressCnt1, workB
+			lds workA, DebugFlags
+			ldi workC, 1
+			eor workA, workC
+			sts DebugFlags, workA
+hs_check_dbg:
+			lds workA, DebugFlags
+			sbrs workA, 0
+			rjmp hs_scroll
+			rcall DumpObservationPathDebug
+			ret
+hs_scroll:
+			rcall UpdateLCDForScroll
+			ret
 
 HandlePlaybackState:
 	; TODO: step through ObservationPath, highlight current point, display
@@ -2694,8 +2704,8 @@ UpdateLCDForPlayback:
 	ret
 
 ; ------------------------------------------------------------------------------
-; Debug: Dump first two ObservationPath triplets to LCD
-;   Line0: "0: xx,yy,zz"   Line1: "1: xx,yy,zz" (spaces for missing)
+; Debug: Dump ObservationPath[0] and ObservationPoints[0]
+;   Line0: "P0: xx,yy,zz Lnn"   Line1: "OP0: xx,yy,zz"
 ; ------------------------------------------------------------------------------
 DumpObservationPathDebug:
 	push YL
@@ -2730,30 +2740,37 @@ dbg_fill1:
 	ldi XL, low(ObservationPath)
 	ldi XH, high(ObservationPath)
 
-	; render line0 header "0: " at [0..2]
-	ldi workA, '0'
+	; render line0 header "P0: " at [0..2]
+	ldi workA, 'P'
 	sts LCDLine0+0, workA
-	ldi workA, ':'
+	ldi workA, '0'
 	sts LCDLine0+1, workA
-	ldi workA, ' '
+	ldi workA, ':'
 	sts LCDLine0+2, workA
+	ldi workA, ' '
+	sts LCDLine0+3, workA
 
-	; load first triplet x0,y0,z0
+	; load first triplet x0,y0,z0 from ObservationPath
 	ld workC, X+
 	ld workD, X+
 	ld workE, X+
-	; print "xx,yy,zz" starting at LCDLine0+3
+	; print "xx,yy,zz" starting at LCDLine0+4
 	rcall dbg_print_triple_line0
 
-	; render line1 header "1: " at [0..2]
-	ldi workA, '1'
+	; render line1 header "OP0: " and show ObservationPoints[0]
+	ldi workA, 'O'
 	sts LCDLine1+0, workA
-	ldi workA, ':'
+	ldi workA, 'P'
 	sts LCDLine1+1, workA
-	ldi workA, ' '
+	ldi workA, '0'
 	sts LCDLine1+2, workA
-
-	; load second triplet x1,y1,z1 (already at +3)
+	ldi workA, ':'
+	sts LCDLine1+3, workA
+	ldi workA, ' '
+	sts LCDLine1+4, workA
+	; load first triplet from ObservationPoints
+	ldi XL, low(ObservationPoints)
+	ldi XH, high(ObservationPoints)
 	ld workC, X+
 	ld workD, X+
 	ld workE, X+
@@ -2777,36 +2794,36 @@ dbg_print_triple_line0:
 	push workB
 	push workF
 
-	; x -> [3],[4]
+	; x -> [4],[5]
 	mov workA, workC
 	rcall dbg_two_digit
-	sts LCDLine0+3, workB
-	sts LCDLine0+4, workA
+	sts LCDLine0+4, workB
+	sts LCDLine0+5, workA
 	; comma
 	ldi workA, ','
-	sts LCDLine0+5, workA
-	; y -> [6],[7]
+	sts LCDLine0+6, workA
+	; y -> [7],[8]
 	mov workA, workD
 	rcall dbg_two_digit
-	sts LCDLine0+6, workB
-	sts LCDLine0+7, workA
+	sts LCDLine0+7, workB
+	sts LCDLine0+8, workA
 	; comma
 	ldi workA, ','
-	sts LCDLine0+8, workA
-	; z -> [9],[10]
+	sts LCDLine0+9, workA
+	; z -> [10],[11]
 	mov workA, workE
 	rcall dbg_two_digit
-	sts LCDLine0+9, workB
-	sts LCDLine0+10, workA
+	sts LCDLine0+10, workB
+	sts LCDLine0+11, workA
 	; show LEN at end for context: " Lnn"
 	ldi workA, ' '
-	sts LCDLine0+11, workA
-	ldi workA, 'L'
 	sts LCDLine0+12, workA
+	ldi workA, 'L'
+	sts LCDLine0+13, workA
 	lds workA, PathLength
 	rcall dbg_two_digit
-	sts LCDLine0+13, workB
-	sts LCDLine0+14, workA
+	sts LCDLine0+14, workB
+	sts LCDLine0+15, workA
 
 	pop workF
 	pop workB
