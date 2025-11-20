@@ -2072,15 +2072,17 @@ greedy_store_ok:
 			add xl, r0
 			adc xh, r1
 			clr r1
-			; if first index (r6==0), snapshot the address we will store
-			cpi r6, 0
-			brne gso_no_addr_snap
-			sts DbgOPAddrL, xl
-			sts DbgOPAddrH, xh
+            ; if first index (r6==0), snapshot the address we will store
+            cpi r6, 0
+            brne gso_no_addr_snap
+            mov workA, xl
+            sts DbgOPAddrL, workA
+            mov workA, xh
+            sts DbgOPAddrH, workA
 gso_no_addr_snap:
-			st x+, r4
-			st x+, r5
-			st x+, r23
+            st x+, r4
+            st x+, r5
+            st x+, r23
 		; pre_cover = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
 		load_array_from_data Pre_CoverageMask, Max_CoverageMask, MAP_CELLS
 
