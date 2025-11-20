@@ -1104,6 +1104,15 @@ hpg_done:
 		ret
 
 HandleScrollState:
+		; If PB1 pressed, show debug dump of ObservationPath instead of scrolling
+		lds workB, ButtonPressCnt1
+		sbrs workB, 0
+		rjmp hs_no_dbg
+		clr workB
+		sts ButtonPressCnt1, workB
+		rcall DumpObservationPathDebug
+		ret
+hs_no_dbg:
 		rcall UpdateLCDForScroll
 		ret
 
@@ -2682,6 +2691,174 @@ uls_stamp_done:
 
 UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed
+	ret
+
+; ------------------------------------------------------------------------------
+; Debug: Dump first two ObservationPath triplets to LCD
+;   Line0: "0: xx,yy,zz"   Line1: "1: xx,yy,zz" (spaces for missing)
+; ------------------------------------------------------------------------------
+DumpObservationPathDebug:
+	push YL
+	push YH
+	push XL
+	push XH
+	push workA
+	push workB
+	push workC
+	push workD
+	push workE
+	push workF
+
+	; clear both LCD lines
+	ldi YL, low(LCDLine0)
+	ldi YH, high(LCDLine0)
+	ldi workA, LCD_COLS
+	ldi workB, ' '
+dbg_fill0:
+	st Y+, workB
+	dec workA
+	brne dbg_fill0
+	ldi YL, low(LCDLine1)
+	ldi YH, high(LCDLine1)
+	ldi workA, LCD_COLS
+dbg_fill1:
+	st Y+, workB
+	dec workA
+	brne dbg_fill1
+
+	; prepare pointer to ObservationPath
+	ldi XL, low(ObservationPath)
+	ldi XH, high(ObservationPath)
+
+	; render line0 header "0: " at [0..2]
+	ldi workA, '0'
+	sts LCDLine0+0, workA
+	ldi workA, ':'
+	sts LCDLine0+1, workA
+	ldi workA, ' '
+	sts LCDLine0+2, workA
+
+	; load first triplet x0,y0,z0
+	ld workC, X+
+	ld workD, X+
+	ld workE, X+
+	; print "xx,yy,zz" starting at LCDLine0+3
+	rcall dbg_print_triple_line0
+
+	; render line1 header "1: " at [0..2]
+	ldi workA, '1'
+	sts LCDLine1+0, workA
+	ldi workA, ':'
+	sts LCDLine1+1, workA
+	ldi workA, ' '
+	sts LCDLine1+2, workA
+
+	; load second triplet x1,y1,z1 (already at +3)
+	ld workC, X+
+	ld workD, X+
+	ld workE, X+
+	rcall dbg_print_triple_line1
+
+	pop workF
+	pop workE
+	pop workD
+	pop workC
+	pop workB
+	pop workA
+	pop XH
+	pop XL
+	pop YH
+	pop YL
+	ret
+
+; expects workC=x, workD=y, workE=z; writes at LCDLine0+3..15
+dbg_print_triple_line0:
+	push workA
+	push workB
+	push workF
+
+	; x -> [3],[4]
+	mov workA, workC
+	rcall dbg_two_digit
+	sts LCDLine0+3, workB
+	sts LCDLine0+4, workA
+	; comma
+	ldi workA, ','
+	sts LCDLine0+5, workA
+	; y -> [6],[7]
+	mov workA, workD
+	rcall dbg_two_digit
+	sts LCDLine0+6, workB
+	sts LCDLine0+7, workA
+	; comma
+	ldi workA, ','
+	sts LCDLine0+8, workA
+	; z -> [9],[10]
+	mov workA, workE
+	rcall dbg_two_digit
+	sts LCDLine0+9, workB
+	sts LCDLine0+10, workA
+	; show LEN at end for context: " Lnn"
+	ldi workA, ' '
+	sts LCDLine0+11, workA
+	ldi workA, 'L'
+	sts LCDLine0+12, workA
+	lds workA, PathLength
+	rcall dbg_two_digit
+	sts LCDLine0+13, workB
+	sts LCDLine0+14, workA
+
+	pop workF
+	pop workB
+	pop workA
+	ret
+
+; expects workC=x, workD=y, workE=z; writes at LCDLine1+3..15
+dbg_print_triple_line1:
+	push workA
+	push workB
+	push workF
+
+	; x -> [3],[4]
+	mov workA, workC
+	rcall dbg_two_digit
+	sts LCDLine1+3, workB
+	sts LCDLine1+4, workA
+	; comma
+	ldi workA, ','
+	sts LCDLine1+5, workA
+	; y -> [6],[7]
+	mov workA, workD
+	rcall dbg_two_digit
+	sts LCDLine1+6, workB
+	sts LCDLine1+7, workA
+	; comma
+	ldi workA, ','
+	sts LCDLine1+8, workA
+	; z -> [9],[10]
+	mov workA, workE
+	rcall dbg_two_digit
+	sts LCDLine1+9, workB
+	sts LCDLine1+10, workA
+
+	pop workF
+	pop workB
+	pop workA
+	ret
+
+; dbg_two_digit: input workA=0..255, output workB=tens char, workA=ones char
+dbg_two_digit:
+	push workC
+	mov workC, workA
+	ldi workB, ' '
+	cpi workC, 10
+	brlo dbg_td_tens_done
+	ldi workB, '1'
+	subi workC, 10
+dbg_td_tens_done:
+	ldi workA, '0'
+	add workA, workC
+	pop workC
 	ret
 
 ;---------------------------------
