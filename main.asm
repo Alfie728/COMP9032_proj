@@ -24,8 +24,7 @@
 .def temp11     = r13
 .def temp12     = r14
 .def temp13     = r15
-.def lcd_data   = r16
-.def data       = r30
+.def data       = r16
 .def workA      = r17
 .def workB      = r18
 .def workC      = r19
@@ -210,6 +209,9 @@ load_byte_from_data_end:
 	adc yh, r16
 	mov xl, yl
 	mov xh, yh
+
+	; keep zero register clean after mul
+	clr r1
 
 	pop r17
 	pop r16
@@ -500,6 +502,7 @@ InitRegisters:
 	clr temp11
 	clr temp12
 	clr temp13
+	clr r1                ; keep zero register cleared (mul clobbers r1)
 	ret
 
 InitIOPorts:
@@ -1887,10 +1890,9 @@ pg_capacity_ok:
 		ldi xl, low(ObservationPoints)
 		ldi r22, OBS_POINT_STRIDE
 		mul r21, r22
-		mov r22, r0
-		add xl, r22
-		ldi r22, 0
-		adc xh, r22
+		add xl, r0
+		adc xh, r1
+		clr r1
 		ld r2, x+
 		ld r3, x+
 		ld r23, x
@@ -1900,10 +1902,9 @@ pg_capacity_ok:
 		ldi xl, low(ObservationPath)
 		ldi r22, OBS_POINT_STRIDE 
 		mul r9, r22
-		mov r22, r0
-		add xl, r22
-		ldi r22, 0
-		adc xh, r22
+		add xl, r0
+		adc xh, r1
+		clr r1
 		st x+, r2
 		st x+, r3
 		st x, r23
@@ -2031,8 +2032,8 @@ greedy_store_ok:
 		ldi r22, 3
 		mul r6, r22
 		add xl, r0
-		ldi r22, 0
-		adc xh, r22
+		adc xh, r1
+		clr r1
 		st x+, r4
 		st x+, r5
 		st x+, r23
