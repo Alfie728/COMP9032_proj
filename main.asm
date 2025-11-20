@@ -381,7 +381,8 @@ YEditVal:              .byte 1
 YEditCnt:              .byte 1
 VEditVal:              .byte 1
 VEditCnt:              .byte 1
-
+ButtonPressCnt: 	   .byte 1           ; counts PB0 presses (bit0 used in pause)
+ButtonPressCnt1: 	   .byte 1           ; counts PB1 presses (bit0 used in pause)
 	; ----- Part 3: terrain + path data -----
 MountainMatrix:			.byte MAP_CELLS
 Cur_CoverageMask:		.byte MAP_CELLS
@@ -422,9 +423,9 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 .org 0x0000
 	jmp RESET
 .org INT0addr
-	jmp INT0_ISR            ; PB0 if used as interrupt
+	jmp EXT_INT0            ; PB0 if used as interrupt
 .org INT1addr
-	jmp INT1_ISR            ; PB1 if used as interrupt
+	jmp EXT_INT1           ; PB1 if used as interrupt
 ; Ensure ascending vector order to avoid .cseg overlap.
 .org OVF2addr
 	jmp TIMER2_OVF_ISR      ; optional LED blink or keypad debounce
@@ -507,12 +508,21 @@ InitIOPorts:
 	ldi workA, INIT_COL_MASK
 	sts PORTL, workA
 
-	; Push buttons PB0 / PB1 as inputs with pull-ups
-	cbi DDRB, 0
-	cbi DDRB, 1
-	sbi PORTB, 0
-	sbi PORTB, 1
-	ret
+	;INT0/INT1 inputs with pull-ups
+    clr temp7
+    out DDRE, temp7
+    ldi temp7, (1<<PE0)|(1<<PE1)
+    out PORTE, temp7
+
+    ; Falling-edge triggers on both INT0 and INT1
+    ldi temp7, (1<<ISC01)|(1<<ISC11)
+    sts EICRA, temp7
+    ldi temp7, (1<<INT0)|(1<<INT1)
+    out EIMSK, temp7
+
+	clr temp0
+  	sts ButtonPressCnt, temp0
+	sts ButtonPressCnt1, temp0
 
 InitLCDDriver:
 	; Use exact Lab 3/4 LCD init sequence/macros
@@ -637,7 +647,6 @@ fill_line1:
 	dec temp1
 	brne fill_line1
 	ret
-
 SampleInputs:
     rcall ScanKeypad         ; returns ASCII in workG or 0 if none
     rcall LatchKeyEvent
@@ -1001,7 +1010,7 @@ RS_CONFIG:
     rcall HandleConfigState
     ret
 RS_PATHGEN:
-    rcall HandlePathGenState
+    ;rcall HandlePathGenState
     ret
 RS_SCROLL:
     rcall HandleScrollState
@@ -1025,12 +1034,12 @@ HandleConfigState:
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
-    brne hc_check_pb0
+    brne hc_render
     ; all set; if S4 not set, build path and mark S4
     lds workB, StageFlags
     sbrs workB, 3
     rjmp hc_do_s4
-    rjmp hc_check_pb0
+    ;rjmp hc_check_pb0
 hc_do_s4:
     rcall ResetCoverageMap
     rcall GenerateSearchPath
@@ -1044,6 +1053,14 @@ hc_do_s4:
     ldi workA, STATE_SCROLL_PATH
     sts DroneState, workA
     ret
+Pause_wait_PB0:
+		; wait for PB0 press to begin playback
+		lds workB, ButtonPressCnt
+		sbrs workB, 0
+		rjmp pause_wait_pb0
+		clr workB
+		sts ButtonPressCnt, workB
+		ret	
 hc_check_pb0:
     ; If PB0 pressed, transition to path generation state (will go to scroll)
     lds workB, ButtonSnapshot
@@ -2634,12 +2651,42 @@ UpdateLCDForPlayback:
 	; TODO: line0 emphasises current point, line1 prints state+alt+speed
 	ret
 
-INT0_ISR:
-	; TODO: optional PB0 interrupt handling
-	reti
+;---------------------------------
+;Reset PB0
+;---------------------------------
+EXT_INT0:
+	push temp0
+	push temp1
+	in   temp0, SREG
+	push temp0
 
-INT1_ISR:
-	; TODO: optional PB1 interrupt handling
+	lds temp1, ButtonPressCnt
+	inc temp1
+	sts ButtonPressCnt, temp1
+
+	pop temp0
+	out SREG, temp0
+	pop temp1
+	pop temp0
+	reti
+; ------------------------------------------------------------------------------
+
+
+EXT_INT1:
+	push temp0
+	push temp1
+	in   temp0, SREG
+	push temp0
+
+	lds temp1, ButtonPressCnt1
+	inc temp1
+	sts ButtonPressCnt1, temp1
+
+	pop temp0
+	out SREG, temp0
+	pop temp1
+	pop temp0
+	reti
 	reti
 
 TIMER0_OVF_ISR:
