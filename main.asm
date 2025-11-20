@@ -1976,9 +1976,8 @@ Greedy_search:
 	in r23, SREG
 	push r23
 
-	; counter = 1
+	; counter = 0 (store first point at index 0)
 	clr r6
-	inc r6
 
 	greedy_while:
 	; while True:
