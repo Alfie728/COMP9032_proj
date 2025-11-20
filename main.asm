@@ -76,9 +76,6 @@
 .equ STATE_PLAYBACK     = 4
 .equ STATE_DONE         = 5
 
-; Push button bits on PINB
-.equ PB0_MASK           = 0b00000001
-.equ PB1_MASK           = 0b00000010
 
 ; Keypad wiring constants (reuse from lab references once finalised)
 .equ ROWMASK            = 0x0F
@@ -101,6 +98,11 @@
 .equ SCROLL_PERIOD      = 5            ; number of ticks between LCD scrolls (unused, legacy)
 .equ SCROLL_BUF_SIZE    = 64           ; bytes of formatted scroll text
 .equ SCROLL_STEP_BIT    = 6            ; use bit6 of ScrollTimer to pace scrolling (~7.6 Hz)
+.equ PLAYBACK_DWELL_TICKS = 80         ; ticks before advancing to next observation
+.equ ALT_MIN_DM         = 0
+.equ ALT_MAX_DM         = 99
+.equ SPEED_MIN_DMPS     = 0
+.equ SPEED_MAX_DMPS     = 99
 
 ;-------------------------------------------------------------------------------
 ; Macro Definition
@@ -384,7 +386,8 @@ YEditVal:              .byte 1
 YEditCnt:              .byte 1
 VEditVal:              .byte 1
 VEditCnt:              .byte 1
-
+ButtonPressCnt: 	   .byte 1           ; counts PB0 presses (bit0 used in pause)
+ButtonPressCnt1: 	   .byte 1           ; counts PB1 presses (bit0 used in pause)
 	; ----- Part 3: terrain + path data -----
 MountainMatrix:			.byte MAP_CELLS
 Cur_CoverageMask:		.byte MAP_CELLS
@@ -402,6 +405,7 @@ ScrollBuffer:          .byte SCROLL_BUF_SIZE
 QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
+PathReadyFlag:         .byte 1          ; 0=pending,1=scroll buffer ready
 
 	; ----- Part 4: path playback state (speed/crash fixed) -----
 DroneState:            .byte 1          ; STATE_* value
@@ -410,6 +414,8 @@ PlaybackTimer:         .byte 1          ; delays between observations
 AltitudeDm:            .byte 1          ; locked to DEFAULT_ALT_DM
 SpeedDmPerS:           .byte 1          ; locked to DEFAULT_SPEED_DMPS
 AccidentFoundFlag:     .byte 1
+PlaybackUIState:       .byte 1          ; 0=path view, 1=control overlay
+PlaybackMode:          .byte 1          ; 0=flight, 1=pause, 2=crash
 
 	; LCD strings and scratch buffers
 LCDLine0:              .byte LCD_COLS
@@ -425,9 +431,9 @@ PointRenderBuf:        .byte 8          ; e.g., "3,3,6/"
 .org 0x0000
 	jmp RESET
 .org INT0addr
-	jmp INT0_ISR            ; PB0 if used as interrupt
+	jmp EXT_INT0            ; PB0 if used as interrupt
 .org INT1addr
-	jmp INT1_ISR            ; PB1 if used as interrupt
+	jmp EXT_INT1           ; PB1 if used as interrupt
 ; Ensure ascending vector order to avoid .cseg overlap.
 .org OVF2addr
 	jmp TIMER2_OVF_ISR      ; optional LED blink or keypad debounce
@@ -462,8 +468,6 @@ MainLoop:
     rcall SampleInputs        ; read buttons/keypad, update snapshots
     rcall RunStateMachine     ; central dispatcher using DroneState (stubbed)
     rcall DriveOutputs        ; LCD heartbeat + LED bar
-	rcall BuildMountainModel
-	rcall ResetCoverageMap
     rjmp MainLoop
 
 ; ==============================================================================
@@ -512,12 +516,21 @@ InitIOPorts:
 	ldi workA, INIT_COL_MASK
 	sts PORTL, workA
 
-	; Push buttons PB0 / PB1 as inputs with pull-ups
-	cbi DDRB, 0
-	cbi DDRB, 1
-	sbi PORTB, 0
-	sbi PORTB, 1
-	ret
+	;INT0/INT1 inputs with pull-ups
+    clr temp7
+    out DDRE, temp7
+    ldi temp7, (1<<PE0)|(1<<PE1)
+    out PORTE, temp7
+
+    ; Falling-edge triggers on both INT0 and INT1
+    ldi temp7, (1<<ISC01)|(1<<ISC11)
+    sts EICRA, temp7
+    ldi temp7, (1<<INT0)|(1<<INT1)
+    out EIMSK, temp7
+
+	clr temp0
+  	sts ButtonPressCnt, temp0
+	sts ButtonPressCnt1, temp0
 
 InitLCDDriver:
 	; Use exact Lab 3/4 LCD init sequence/macros
@@ -600,19 +613,23 @@ InitStateMachine:
 	sts PathLength, temp0
 	sts PathIndex, temp0
     sts ScrollHead, temp0
-    sts ScrollPhase, temp0
-    sts ScrollTextLen, temp0
+	sts ScrollPhase, temp0
+	sts ScrollTextLen, temp0
 	sts QueueHead, temp0
 	sts QueueTail, temp0
 	sts DroneState, temp0
 	sts PlaybackIndex, temp0
     sts PlaybackTimer, temp0
     sts AccidentFoundFlag, temp0
+    sts PathReadyFlag, temp0
 
     ldi workA, DEFAULT_ALT_DM
     sts AltitudeDm, workA
     ldi workA, DEFAULT_SPEED_DMPS
     sts SpeedDmPerS, workA
+    clr temp0
+    sts PlaybackUIState, temp0
+    sts PlaybackMode, temp0
 
     ; clear edit buffers
     sts XEditVal, temp0
@@ -642,7 +659,6 @@ fill_line1:
 	dec temp1
 	brne fill_line1
 	ret
-
 SampleInputs:
     rcall ScanKeypad         ; returns ASCII in workG or 0 if none
     rcall LatchKeyEvent
@@ -650,7 +666,7 @@ SampleInputs:
 	in temp0, PINB
 	com temp0
 	mov workA, temp0
-	andi workA, (PB0_MASK | PB1_MASK)
+
 	mov temp0, workA
 	sts ButtonSnapshot, temp0
 
@@ -864,6 +880,38 @@ write_line1_done:
 	; Each component limited to two chars + comma separators
 .endmacro
 
+; Convert value in workA (0..99) into two ASCII chars at [Y], [Y+1].
+FormatTwoDigitToY:
+	push workB
+	push workC
+	push workD
+	mov workB, workA
+	clr workC
+ftdy_div10:
+	cpi workB, 10
+	brlo ftdy_after_div
+	subi workB, 10
+	inc workC
+	rjmp ftdy_div10
+ftdy_after_div:
+	ldi workD, ' '
+	tst workC
+	breq ftdy_store_space
+	ldi workD, '0'
+	add workC, workD
+	st Y+, workC
+	rjmp ftdy_store_ones
+ftdy_store_space:
+	st Y+, workD
+ftdy_store_ones:
+	ldi workD, '0'
+	add workB, workD
+	st Y+, workB
+	pop workD
+	pop workC
+	pop workB
+	ret
+
 ; ----- Keypad helper routines -------------------------------------------------
 ; Lab-3 style scan + decode in one routine
 ; Output: workG = ASCII of key (or 0 if none)
@@ -873,7 +921,9 @@ ScanKeypad:
     clr workG                  ; default: no key
 scan_column_loop:
     cpi workB, 4
-    breq scan_exit_none
+    brne scan_col_continue
+    rjmp scan_exit_none
+scan_col_continue:
     sts PORTL, workC           ; drive this column low, others high; rows pulled up
     ldi temp7, KEYPAD_SETTLE_LO
     ldi temp8, KEYPAD_SETTLE_HI
@@ -892,10 +942,9 @@ row_loop:
     lsr workE
     rjmp row_loop
 have_row:
-    ; ignore letter column 3
+    ; map to ASCII (column 3 holds letter keys)
     cpi workB, 3
-    breq scan_exit_none
-    ; map to ASCII
+    breq letter_col
     cpi workD, 3
     breq sym_row
     ; digit '1'..'9': ascii = 3*row + col + '1'
@@ -922,6 +971,28 @@ sym_zero:
     rjmp scan_exit
 sym_pound:
     ldi workG, '#'
+    rjmp scan_exit
+letter_col:
+    cpi workD, 0
+    breq letter_a
+    cpi workD, 1
+    breq letter_b
+    cpi workD, 2
+    breq letter_c
+    cpi workD, 3
+    breq letter_d
+    rjmp scan_exit_none
+letter_a:
+    ldi workG, 'A'
+    rjmp scan_exit
+letter_b:
+    ldi workG, 'B'
+    rjmp scan_exit
+letter_c:
+    ldi workG, 'C'
+    rjmp scan_exit
+letter_d:
+    ldi workG, 'D'
     rjmp scan_exit
 next_column:
     lsl workC                   ; next column
@@ -980,7 +1051,32 @@ BeginScrollPreview:
 	ret
 
 BeginPlaybackRun:
-	; TODO: executed when PB1 pressed, seed PlaybackIndex/timer and move to STATE_PLAYBACK
+	push workA
+	push workB
+	push workC
+	lds workA, PathLength
+	tst workA
+	breq bpr_done
+	clr workC
+	sts PlaybackIndex, workC
+	sts PlaybackTimer, workC
+	sts PlaybackUIState, workC
+	sts PlaybackMode, workC
+	sts AccidentFoundFlag, workC
+	ldi workB, DEFAULT_ALT_DM
+	sts AltitudeDm, workB
+	ldi workB, DEFAULT_SPEED_DMPS
+	sts SpeedDmPerS, workB
+	lds workB, StageFlags
+	ori workB, (1<<4)
+	sts StageFlags, workB
+	ldi workB, STATE_PLAYBACK
+	sts DroneState, workB
+	call UpdateLCDForPlayback
+bpr_done:
+	pop workC
+	pop workB
+	pop workA
 	ret
 
 RunStateMachine:
@@ -1006,7 +1102,7 @@ RS_CONFIG:
     rcall HandleConfigState
     ret
 RS_PATHGEN:
-    rcall HandlePathGenState
+    ;rcall HandlePathGenState
     ret
 RS_SCROLL:
     rcall HandleScrollState
@@ -1030,44 +1126,44 @@ HandleConfigState:
     lds workD, ConfigFlags
     andi workD, 0x07
     cpi workD, 0x07
-    brne hc_check_pb0
+    brne hc_render
     ; all set; if S4 not set, build path and mark S4
     lds workB, StageFlags
     sbrs workB, 3
     rjmp hc_do_s4
-    rjmp hc_check_pb0
+    ;rjmp hc_check_pb0
+
 hc_do_s4:
+Pause_wait_PB0:
+		; wait for PB0 press to begin playback
+		lds workB, ButtonPressCnt
+		sbrs workB, 0
+		rjmp pause_wait_pb0
+		clr workB
+		sts ButtonPressCnt, workB
+		
+
     rcall ResetCoverageMap
     rcall GenerateSearchPath
     rcall PreparePathScrollData
+	ldi workA, 1
+	sts PathReadyFlag, workA
     lds workA, PathLength
     cpi workA, 0
-    breq hc_check_pb0
+    ;breq hc_check_pb0
     ori workB, (1<<3)
     sts StageFlags, workB
     ; auto-transition to scroll
     ldi workA, STATE_SCROLL_PATH
     sts DroneState, workA
     ret
-hc_check_pb0:
-    ; If PB0 pressed, transition to path generation state (will go to scroll)
-    lds workB, ButtonSnapshot
-    sbrs workB, 0              ; PB0 bit
-    rjmp hc_render
-    ldi workA, STATE_PATH_GEN
-    sts DroneState, workA
-    ret
+
 hc_render:
     ; Ensure CONFIG screen reflects latest edits/commits
     rcall UpdateLCDForConfig
     ret
 
 HandlePathGenState:
-		; S4: reset coverage and build a trivial non-empty path
-		rcall ResetCoverageMap
-		rcall GenerateSearchPath
-		rcall PreparePathScrollData
-		; if PathLength > 0, set S4 flag and move to scroll
 		lds workA, PathLength
 		cpi workA, 0
 		breq hpg_done
@@ -1082,17 +1178,230 @@ hpg_done:
 		ret
 
 HandleScrollState:
+		; Block until path generation/formatting reports ready
+		lds workB, PathReadyFlag
+		tst workB
+		breq handle_scroll_wait
+		; PB1 starts playback
+		lds workB, ButtonPressCnt1
+		sbrs workB, 0
+		rjmp hss_render
+		clr workB
+		sts ButtonPressCnt1, workB
+		call BeginPlaybackRun
+		ret
+handle_scroll_wait:
+		; show placeholder while waiting on path data
+		rcall UpdateLCDForConfig
+		ret
+hss_render:
 		rcall UpdateLCDForScroll
 		ret
 
 HandlePlaybackState:
-	; TODO: step through ObservationPath, highlight current point, display
-	; TODO: second line "P 61 2" with bold coordinates per Figure 4(c)
-	ret
+		call ProcessPlaybackKeys
+		call AdvancePlaybackStep
+		lds workB, PlaybackIndex
+		lds workC, PathLength
+		cp workB, workC
+		brlo hps_render
+		lds workA, ConfigFlags
+		andi workA, 0x03
+		cpi workA, 0x03
+		brne hps_mark_nf
+		ldi workA, 1
+		sts AccidentFoundFlag, workA
+		rjmp hps_set_done
+hps_mark_nf:
+		clr workA
+		sts AccidentFoundFlag, workA
+hps_set_done:
+		lds workB, StageFlags
+		ori workB, (1<<6)
+		sts StageFlags, workB
+		ldi workA, STATE_DONE
+		sts DroneState, workA
+		ret
+hps_render:
+		call UpdateLCDForPlayback
+		ret
+
+ProcessPlaybackKeys:
+		push workA
+		push workB
+		push workC
+		lds workA, KeypadSnapshot
+		tst workA
+		brne pbk_have_key
+		rjmp pbk_done
+pbk_have_key:
+		cpi workA, '#'
+		breq pbk_toggle_view
+		cpi workA, 'A'
+		breq pbk_alt_up
+		cpi workA, 'B'
+		breq pbk_alt_down
+		cpi workA, 'C'
+		breq pbk_speed_up
+		cpi workA, 'D'
+		breq pbk_speed_down
+		rjmp pbk_done
+pbk_toggle_view:
+		lds workB, PlaybackUIState
+		ldi workC, 1
+		eor workB, workC
+		sts PlaybackUIState, workB
+		tst workB
+		breq pbk_set_flight
+		sts PlaybackMode, workC
+		rjmp pbk_done
+pbk_set_flight:
+		clr workC
+		sts PlaybackMode, workC
+		rjmp pbk_done
+pbk_alt_up:
+		lds workB, PlaybackUIState
+		tst workB
+		breq pbk_done
+		lds workC, AltitudeDm
+		cpi workC, ALT_MAX_DM
+		brsh pbk_done
+		inc workC
+		sts AltitudeDm, workC
+		rjmp pbk_done
+pbk_alt_down:
+		lds workB, PlaybackUIState
+		tst workB
+		breq pbk_done
+		lds workC, AltitudeDm
+		cpi workC, ALT_MIN_DM
+		breq pbk_done
+		dec workC
+		sts AltitudeDm, workC
+		rjmp pbk_done
+pbk_speed_up:
+		lds workB, PlaybackUIState
+		tst workB
+		breq pbk_done
+		lds workC, SpeedDmPerS
+		cpi workC, SPEED_MAX_DMPS
+		brsh pbk_done
+		inc workC
+		sts SpeedDmPerS, workC
+		rjmp pbk_done
+pbk_speed_down:
+		lds workB, PlaybackUIState
+		tst workB
+		breq pbk_done
+		lds workC, SpeedDmPerS
+		cpi workC, SPEED_MIN_DMPS
+		breq pbk_done
+		dec workC
+		sts SpeedDmPerS, workC
+pbk_done:
+		pop workC
+		pop workB
+		pop workA
+		ret
 
 HandleDoneState:
-	; TODO: show final point + accident status as in Figure 4(d)
-	ret
+		push YL
+		push YH
+		push XL
+		push XH
+		push workA
+		push workB
+		push workC
+		push workD
+		push workE
+		push workF
+		push workG
+		; clear both lines
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+		ldi workB, ' '
+hd_fill0:
+		st Y+, workB
+		dec workA
+		brne hd_fill0
+		ldi YL, low(LCDLine1)
+		ldi YH, high(LCDLine1)
+		ldi workA, LCD_COLS
+hd_fill1:
+		st Y+, workB
+		dec workA
+		brne hd_fill1
+		; show final portion of scroll text (last 16 chars)
+		lds workD, ScrollTextLen
+		clr workE
+		cpi workD, LCD_COLS
+		brlo hd_start_ready
+		mov workE, workD
+		subi workE, LCD_COLS
+hd_start_ready:
+		mov workF, workE
+		ldi XL, low(ScrollBuffer)
+		ldi XH, high(ScrollBuffer)
+		clr workC
+		add XL, workE
+		adc XH, workC
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+hd_copy_loop:
+		cp workF, workD
+		brlo hd_take_char
+		ldi workG, ' '
+		rjmp hd_store_char
+hd_take_char:
+		ld workG, X+
+hd_store_char:
+		st Y+, workG
+		inc workF
+		dec workA
+		brne hd_copy_loop
+		; line1: accident result or NF
+		lds workA, AccidentFoundFlag
+		tst workA
+		breq hd_not_found
+		ldi workC, '('
+		sts LCDLine1+0, workC
+		ldi YL, low(LCDLine1+1)
+		ldi YH, high(LCDLine1+1)
+		lds workA, AccidentX
+		call FormatTwoDigitToY
+		ldi workC, ','
+		sts LCDLine1+3, workC
+		ldi YL, low(LCDLine1+4)
+		ldi YH, high(LCDLine1+4)
+		lds workA, AccidentY
+		call FormatTwoDigitToY
+		ldi workC, ')'
+		sts LCDLine1+6, workC
+		rjmp hd_stamp
+hd_not_found:
+		ldi workC, 'N'
+		sts LCDLine1+0, workC
+		ldi workC, 'F'
+		sts LCDLine1+1, workC
+hd_stamp:
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '7'
+		sts LCDLine0+15, workC
+		pop workG
+		pop workF
+		pop workE
+		pop workD
+		pop workC
+		pop workB
+		pop workA
+		pop XH
+		pop XL
+		pop YH
+		pop YL
+		ret
 
 AdvanceScrollWindow:
 	; Advance ScrollHead on rising edge of ScrollTimer bit
@@ -1136,7 +1445,31 @@ asw_done:
 	ret
 
 AdvancePlaybackStep:
-	; TODO: increment PlaybackTimer and advance PlaybackIndex when elapsed
+	push workA
+	push workB
+	push workC
+	lds workA, PathLength
+	tst workA
+	breq aps_done
+	lds workB, PlaybackIndex
+	cp workB, workA
+	brsh aps_done
+	lds workC, PlaybackMode
+	tst workC
+	brne aps_done
+	lds workA, PlaybackTimer
+	inc workA
+	cpi workA, PLAYBACK_DWELL_TICKS
+	brlo aps_store
+	clr workA
+	inc workB
+	sts PlaybackIndex, workB
+aps_store:
+	sts PlaybackTimer, workA
+aps_done:
+	pop workC
+	pop workB
+	pop workA
 	ret
 
 UpdateLCDForConfig:
@@ -1755,8 +2088,9 @@ Path_generation:
 				mul r18, r22
 				mov r22, r0
 				add xl, r22
-				ldi r22, 0
-				adc xh, r22 
+				mov r22, r1
+				adc xh, r22
+				clr r1
 				ld r6, x+
 				ld r7, x
 				light_while2:
@@ -1862,9 +2196,10 @@ Path_generation:
 		ldi r22, OBS_POINT_STRIDE
 		mul r21, r22
 		mov r22, r0
-		add xl, r22
-		ldi r22, 0
+        add xl, r22
+		mov r22, r1
 		adc xh, r22
+		clr r1
 		ld r2, x+
 		ld r3, x+
 		ld r23, x
@@ -1876,8 +2211,9 @@ Path_generation:
 		mul r9, r22
 		mov r22, r0
 		add xl, r22
-		ldi r22, 0
+		mov r22, r1
 		adc xh, r22
+		clr r1
 		st x+, r2
 		st x+, r3
 		st x, r23
@@ -1888,7 +2224,16 @@ Path_generation:
 		; counter += 1
 		inc r9
 		jmp Path_generation_while
-	Path_generation_while_end:
+Path_generation_while_end:
+	; store the actual number of points appended (r9) as the new PathLength
+	tst r9
+	brne pg_store_len
+	ldi r22, 1
+	mov r9, r22
+pg_store_len:
+	ldi xh, high(PathLength)
+	ldi xl, low(PathLength)
+	st x, r9
 
 	pop r23
 	out SREG, r23
@@ -1930,9 +2275,8 @@ Greedy_search:
 	in r23, SREG
 	push r23
 
-	; counter = 1
+	; counter = 0
 	clr r6
-	inc r6
 	
 	greedy_while:
 	; while True:
@@ -1998,9 +2342,11 @@ Greedy_search:
 		ldi xl, low(ObservationPoints)
 		ldi r22, 3
 		mul r6, r22
-		add xl, r0
-		ldi r22, 0
+		mov r22, r0
+		add xl, r22
+		mov r22, r1
 		adc xh, r22
+		clr r1
 		st x+, r4
 		st x+, r5
 		st x+, r23
@@ -2011,6 +2357,18 @@ Greedy_search:
 		jmp greedy_while
 	greedy_while_end:
 
+	tst r6
+	brne gs_store_len
+	; no points were found, seed slot 0 with zeroes and force length = 1
+	ldi xh, high(ObservationPoints)
+	ldi xl, low(ObservationPoints)
+	clr r22
+	st x+, r22
+	st x+, r22
+	st x, r22
+	ldi r22, 1
+	mov r6, r22
+gs_store_len:
 	ldi xh, high(PathLength)
 	ldi xl, low(PathLength)
 	st x, r6
@@ -2349,33 +2707,49 @@ Light_path:
 	pop xh
 	ret
 
+;=========================================================
+; GenerateSearchPath
+;  Call Search + Greedy + Path generation,
+;  and finally write the result to ObservationPath
+;=========================================================
+
 GenerateSearchPath:
-	; Build a trivial non-empty path: (X,Y,0) and (X,Y,Vis)
-	push YL
-	push YH
-	ldi YL, low(ObservationPath)
-	ldi YH, high(ObservationPath)
-	; Load current config
-	lds workC, AccidentX
-	lds workD, AccidentY
-	lds workE, Visibility
-	; Point 0: (X,Y,0)
-	st Y+, workC
-	st Y+, workD
-	clr workA
-	st Y+, workA
-	; Point 1: (X,Y,Vis)
-	st Y+, workC
-	st Y+, workD
-	st Y+, workE
-	; PathLength = 2, PathIndex=0
-	ldi workA, 2
-	sts PathLength, workA
-	clr workA
-	sts PathIndex, workA
-	pop YH
-	pop YL
-	ret
+    ; -- Save registers that must be preserved by the caller --
+    push YL
+    push YH
+    push r16
+    push r2
+    push r3
+    ; If Search/Greedy/Path_generation uses workA~workE,
+    ; you may also push/pop them here
+
+    ; -- Initialize map and masks --
+    load_array_from_program m,     MountainMatrix,   MAP_CELLS
+    load_array_from_program zeros, Cur_CoverageMask, MAP_CELLS
+    load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
+
+
+    ; -- Initialize indices/counters used for search --
+    ldi r16, 0
+    mov r2, r16
+    mov r3, r16
+
+    ; -- Execute algorithms --
+    rcall Search
+    load_array_from_data Pre_CoverageMask, Cur_CoverageMask, MAP_CELLS
+    rcall Greedy_search
+    rcall Path_generation     ; Here write the result to ObservationPath,
+                              ; and set PathLength and PathIndex=0
+
+    ; -- Restore registers and return --
+    pop r3
+    pop r2
+    pop r16
+    pop YH
+    pop YL
+    ret
+
+
 
 FindNextObservation:
 	; TODO: evaluate remaining cells and pick best observation point
@@ -2419,6 +2793,12 @@ pps_fill:
 	ldi XH, high(ObservationPath)
 	; len = PathLength
 	lds workG, PathLength
+	; guard against bogus values that would overrun ObservationPath
+	ldi workA, MAX_OBS_POINTS
+	cp workG, workA
+	brlo pps_len_ok
+	mov workG, workA
+pps_len_ok:
 	clr workF               ; i = 0
 	clr workE               ; written = 0
 pps_point_loop:
@@ -2429,48 +2809,19 @@ pps_point_loop:
 	ld workB, X+    ; y
 	ld workC, X+    ; z
 	; write two-digit x
-	mov workD, workA
-	ldi workA, ' '
-	cpi workD, 10
-	brlo pps_x_tens_set
-	ldi workA, '1'
-	subi workD, 10
-pps_x_tens_set:
-	st Y+, workA
-	ldi workA, '0'
-	add workD, workA
-	st Y+, workD
-	adiw YL, 0
+	call FormatTwoDigitToY
 	; comma
 	ldi workA, ','
 	st Y+, workA
 	; write two-digit y
-	mov workD, workB
-	ldi workA, ' '
-	cpi workD, 10
-	brlo pps_y_tens_set
-	ldi workA, '1'
-	subi workD, 10
-pps_y_tens_set:
-	st Y+, workA
-	ldi workA, '0'
-	add workD, workA
-	st Y+, workD
+	mov workA, workB
+	call FormatTwoDigitToY
 	; comma
 	ldi workA, ','
 	st Y+, workA
 	; write two-digit z
-	mov workD, workC
-	ldi workA, ' '
-	cpi workD, 10
-	brlo pps_z_tens_set
-	ldi workA, '1'
-	subi workD, 10
-pps_z_tens_set:
-	st Y+, workA
-	ldi workA, '0'
-	add workD, workA
-	st Y+, workD
+	mov workA, workC
+	call FormatTwoDigitToY
 	; space, '/', space
 	ldi workA, ' '
 	st Y+, workA
@@ -2620,15 +2971,210 @@ uls_stamp_done:
 		ret
 
 UpdateLCDForPlayback:
-	; TODO: line0 emphasises current point, line1 prints state+alt+speed
-	ret
+		push YL
+		push YH
+		push XL
+		push XH
+		push workA
+		push workB
+		push workC
+		push workD
+		push workE
+		push workF
+		push workG
+		; clear both lines
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+		ldi workB, ' '
+ulp_clr0:
+		st Y+, workB
+		dec workA
+		brne ulp_clr0
+		ldi YL, low(LCDLine1)
+		ldi YH, high(LCDLine1)
+		ldi workA, LCD_COLS
+ulp_clr1:
+		st Y+, workB
+		dec workA
+		brne ulp_clr1
+		lds workA, PlaybackUIState
+		tst workA
+		breq ulp_path_view
+		rjmp ulp_controls
+ulp_path_view:
+		; Path view (Figure 4c)
+		lds workE, PlaybackIndex
+		mov workC, workE
+		mov workG, workE
+		lsl workG
+		mov workF, workE
+		lsl workF
+		lsl workF
+		lsl workF
+		add workF, workG
+		add workF, workC
+		mov workE, workF
+		lds workD, ScrollTextLen
+		cp workE, workD
+		brlo ulp_offset_ok
+		clr workE
+ulp_offset_ok:
+		ldi XL, low(ScrollBuffer)
+		ldi XH, high(ScrollBuffer)
+		clr workC
+		add XL, workE
+		adc XH, workC
+		mov workF, workE
+		ldi YL, low(LCDLine0)
+		ldi YH, high(LCDLine0)
+		ldi workA, LCD_COLS
+ulp_line0_loop:
+		cp workF, workD
+		brlo ulp_copy_char
+		ldi workG, ' '
+		rjmp ulp_store_char
+ulp_copy_char:
+		ld workG, X+
+ulp_store_char:
+		st Y+, workG
+		inc workF
+		dec workA
+		brne ulp_line0_loop
+		; line1 state + altitude/speed
+		lds workC, PlaybackMode
+		cpi workC, 2
+		breq ulp_state_crash
+		cpi workC, 1
+		breq ulp_state_pause
+		ldi workC, 'F'
+		rjmp ulp_state_store
+ulp_state_pause:
+		ldi workC, 'P'
+		rjmp ulp_state_store
+ulp_state_crash:
+		ldi workC, 'C'
+ulp_state_store:
+		sts LCDLine1+0, workC
+		ldi workC, ' '
+		sts LCDLine1+1, workC
+		ldi YL, low(LCDLine1+2)
+		ldi YH, high(LCDLine1+2)
+		lds workA, AltitudeDm
+		call FormatTwoDigitToY
+		ldi workC, '/'
+		sts LCDLine1+4, workC
+		ldi YL, low(LCDLine1+5)
+		ldi YH, high(LCDLine1+5)
+		lds workA, SpeedDmPerS
+		call FormatTwoDigitToY
+		; stamp stage marker at end of line 0
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '6'
+		sts LCDLine0+15, workC
+		rjmp ulp_done
+ulp_controls:
+		; Line 0: UA and DA share current altitude value
+		ldi workC, 'U'
+		sts LCDLine0+0, workC
+		ldi workC, 'A'
+		sts LCDLine0+1, workC
+		ldi workC, ':'
+		sts LCDLine0+2, workC
+		ldi YL, low(LCDLine0+3)
+		ldi YH, high(LCDLine0+3)
+		lds workA, AltitudeDm
+		call FormatTwoDigitToY
+		ldi workC, ' '
+		sts LCDLine0+5, workC
+		ldi workC, 'D'
+		sts LCDLine0+6, workC
+		ldi workC, 'A'
+		sts LCDLine0+7, workC
+		ldi workC, ':'
+		sts LCDLine0+8, workC
+		ldi YL, low(LCDLine0+9)
+		ldi YH, high(LCDLine0+9)
+		lds workA, AltitudeDm
+		call FormatTwoDigitToY
+		; Line 1: US and DS share current speed value
+		ldi workC, 'U'
+		sts LCDLine1+0, workC
+		ldi workC, 'S'
+		sts LCDLine1+1, workC
+		ldi workC, ':'
+		sts LCDLine1+2, workC
+		ldi YL, low(LCDLine1+3)
+		ldi YH, high(LCDLine1+3)
+		lds workA, SpeedDmPerS
+		call FormatTwoDigitToY
+		ldi workC, ' '
+		sts LCDLine1+5, workC
+		ldi workC, 'D'
+		sts LCDLine1+6, workC
+		ldi workC, 'S'
+		sts LCDLine1+7, workC
+		ldi workC, ':'
+		sts LCDLine1+8, workC
+		ldi YL, low(LCDLine1+9)
+		ldi YH, high(LCDLine1+9)
+		lds workA, SpeedDmPerS
+		call FormatTwoDigitToY
+		ldi workC, 'S'
+		sts LCDLine0+14, workC
+		ldi workC, '6'
+		sts LCDLine0+15, workC
+ulp_done:
+		pop workG
+		pop workF
+		pop workE
+		pop workD
+		pop workC
+		pop workB
+		pop workA
+		pop XH
+		pop XL
+		pop YH
+		pop YL
+		ret
 
-INT0_ISR:
-	; TODO: optional PB0 interrupt handling
+;---------------------------------
+;Reset PB0
+;---------------------------------
+EXT_INT0:
+	push temp0
+	push temp1
+	in   temp0, SREG
+	push temp0
+
+	lds temp1, ButtonPressCnt
+	inc temp1
+	sts ButtonPressCnt, temp1
+
+	pop temp0
+	out SREG, temp0
+	pop temp1
+	pop temp0
 	reti
+; ------------------------------------------------------------------------------
 
-INT1_ISR:
-	; TODO: optional PB1 interrupt handling
+
+EXT_INT1:
+	push temp0
+	push temp1
+	in   temp0, SREG
+	push temp0
+
+	lds temp1, ButtonPressCnt1
+	inc temp1
+	sts ButtonPressCnt1, temp1
+
+	pop temp0
+	out SREG, temp0
+	pop temp1
+	pop temp0
+	reti
 	reti
 
 TIMER0_OVF_ISR:
