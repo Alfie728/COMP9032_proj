@@ -2979,23 +2979,24 @@ DumpObservationHex:
 
 ; dbg_hex_byte: input workA, output workB (high nibble ASCII), workA (low nibble ASCII)
 dbg_hex_byte:
-	push workC
-	mov workC, workA
-	; high nibble
-	mov workB, workA
-	lsr workB
-	lsr workB
-	lsr workB
-	lsr workB
-	rcall dbg_nibble_to_hex
-	mov workB, workA
-	; low nibble
-	mov workA, workC
-	andi workA, 0x0F
-	rcall dbg_nibble_to_hex
-	; now workB=high hex, workA=low hex
-	pop workC
-	ret
+    push workC
+    mov workC, workA          ; preserve original byte
+    ; high nibble -> ASCII in workB
+    mov workB, workA
+    lsr workB
+    lsr workB
+    lsr workB
+    lsr workB
+    mov workA, workB          ; pass nibble in workA
+    rcall dbg_nibble_to_hex   ; returns ASCII in workA
+    mov workB, workA          ; save high ASCII in workB
+    ; low nibble -> ASCII in workA
+    mov workA, workC
+    andi workA, 0x0F
+    rcall dbg_nibble_to_hex   ; ASCII in workA
+    ; now workB=high hex, workA=low hex
+    pop workC
+    ret
 
 dbg_nibble_to_hex:
 	; workA in 0..15 -> ASCII '0'..'9','A'..'F'
