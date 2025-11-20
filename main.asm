@@ -129,7 +129,7 @@
 load_byte_from_program:
 	lpm r16, z+
 	st x+, r16
-	sbiw r25, 1
+	sbiw r24, 1
 	brne load_byte_from_program
 load_byte_from_program_end:
 	pop r16
@@ -170,7 +170,7 @@ load_byte_from_program_end:
 load_byte_from_data:
 	ld r16, x+
 	st y+, r16
-	sbiw r25, 1
+	sbiw r24, 1
 	brne load_byte_from_data
 load_byte_from_data_end:
 	pop r16
