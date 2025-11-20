@@ -2480,11 +2480,24 @@ pps_point_loop:
     ld workA, X+    ; x
     ld workB, X+    ; y
     ld workC, X+    ; z
-	; write two-digit x
-	mov workD, workA
-	ldi workA, ' '
-	cpi workD, 10
-	brlo pps_x_tens_set
+    ; clamp values to 0..19 to ensure valid two-digit ASCII below
+    cpi workA, 20
+    brlo pps_x_ok
+    ldi workA, 19
+pps_x_ok:
+    cpi workB, 20
+    brlo pps_y_ok
+    ldi workB, 19
+pps_y_ok:
+    cpi workC, 20
+    brlo pps_z_ok
+    ldi workC, 19
+pps_z_ok:
+    ; write two-digit x
+    mov workD, workA
+    ldi workA, ' '
+    cpi workD, 10
+    brlo pps_x_tens_set
 	ldi workA, '1'
 	subi workD, 10
 pps_x_tens_set:
