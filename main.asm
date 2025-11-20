@@ -462,8 +462,6 @@ MainLoop:
     rcall SampleInputs        ; read buttons/keypad, update snapshots
     rcall RunStateMachine     ; central dispatcher using DroneState (stubbed)
     rcall DriveOutputs        ; LCD heartbeat + LED bar
-	rcall BuildMountainModel
-	rcall ResetCoverageMap
     rjmp MainLoop
 
 ; ==============================================================================
@@ -2349,33 +2347,49 @@ Light_path:
 	pop xh
 	ret
 
+;=========================================================
+; GenerateSearchPath
+;  Call Search + Greedy + Path generation,
+;  and finally write the result to ObservationPath
+;=========================================================
+
 GenerateSearchPath:
-	; Build a trivial non-empty path: (X,Y,0) and (X,Y,Vis)
-	push YL
-	push YH
-	ldi YL, low(ObservationPath)
-	ldi YH, high(ObservationPath)
-	; Load current config
-	lds workC, AccidentX
-	lds workD, AccidentY
-	lds workE, Visibility
-	; Point 0: (X,Y,0)
-	st Y+, workC
-	st Y+, workD
-	clr workA
-	st Y+, workA
-	; Point 1: (X,Y,Vis)
-	st Y+, workC
-	st Y+, workD
-	st Y+, workE
-	; PathLength = 2, PathIndex=0
-	ldi workA, 2
-	sts PathLength, workA
-	clr workA
-	sts PathIndex, workA
-	pop YH
-	pop YL
-	ret
+    ; -- Save registers that must be preserved by the caller --
+    push YL
+    push YH
+    push r16
+    push r2
+    push r3
+    ; If Search/Greedy/Path_generation uses workA~workE,
+    ; you may also push/pop them here
+
+    ; -- Initialize map and masks --
+    load_array_from_program m,     MountainMatrix,   MAP_CELLS
+    load_array_from_program zeros, Cur_CoverageMask, MAP_CELLS
+    load_array_from_program zeros, Pre_CoverageMask, MAP_CELLS
+
+
+    ; -- Initialize indices/counters used for search --
+    ldi r16, 0
+    mov r2, r16
+    mov r3, r16
+
+    ; -- Execute algorithms --
+    rcall Search
+    load_array_from_data Pre_CoverageMask, Cur_CoverageMask, MAP_CELLS
+    rcall Greedy_search
+    rcall Path_generation     ; Here write the result to ObservationPath,
+                              ; and set PathLength and PathIndex=0
+
+    ; -- Restore registers and return --
+    pop r3
+    pop r2
+    pop r16
+    pop YH
+    pop YL
+    ret
+
+
 
 FindNextObservation:
 	; TODO: evaluate remaining cells and pick best observation point
