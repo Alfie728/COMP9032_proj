@@ -1703,8 +1703,9 @@ Path_generation:
 	ldi xl, low(PathLength)
 	ld r8, x
 
-	; Visted = [0 for _ in range(len(points))]
-	load_array_from_program zeros, Visted, MAP_CELLS
+    ; Visted = [0 for _ in range(len(points))]
+    ; IMPORTANT: Visted has PATH_BUF_BYTES bytes; do NOT clear MAP_CELLS (overrun)
+    load_array_from_program zeros, Visted, PATH_BUF_BYTES
 	; Visted[0] = 1
 	clr r22
 	array_i Visted, r22
@@ -1729,6 +1730,12 @@ Path_generation:
 	mov r9, r22
 	Path_generation_while:
 	; while True
+		; Guard capacity: if counter >= MAX_OBS_POINTS, stop building order
+		ldi r22, MAX_OBS_POINTS
+		cp r9, r22
+		brlo pg_capacity_ok
+		jmp Path_generation_while_end
+pg_capacity_ok:
 		;min_l = 99
 		ldi r20, 99
 		;min_index = 0
@@ -1998,6 +2005,12 @@ Greedy_search:
 			sbrc r22, 1
 			jmp greedy_while_end
 
+		; Guard capacity: if counter >= MAX_OBS_POINTS, stop appending
+		ldi r22, MAX_OBS_POINTS
+		cp r6, r22
+		brlo greedy_store_ok
+		rjmp greedy_while_end
+greedy_store_ok:
 		;point.append(max_point)
 		array_i_j MountainMatrix, MAP_SIZE, r4, r5
 		ld r23, x
