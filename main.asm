@@ -142,7 +142,7 @@ load_byte_from_program_end:
 	pop zh
 .endmacro
 
-;void load_array_from_data(data addr1, data addr2, int length) 
+;void load_array_from_data(data addr1, data addr2, int length)
 ; Description: data addr1 <- data addr2
 ;Uses 16-bit counter (r25:r24) so length can exceed 255
 .macro load_array_from_data
@@ -1064,7 +1064,7 @@ Pause_wait_PB0:
 		rjmp pause_wait_pb0
 		clr workB
 		sts ButtonPressCnt, workB
-		
+
 
     rcall ResetCoverageMap
     rcall GenerateSearchPath
@@ -1713,7 +1713,7 @@ Path_generation:
 	push r23
 	in r23, SREG
 	push r23
-	
+
 	ldi xh, high(PathLength)
 	ldi xl, low(PathLength)
 	ld r8, x
@@ -1785,7 +1785,7 @@ pg_capacity_ok:
 				mov r22, r0
 				add xl, r22
 				ldi r22, 0
-				adc xh, r22 
+				adc xh, r22
 				ld r6, x+
 				ld r7, x
 				light_while2:
@@ -1863,7 +1863,7 @@ pg_capacity_ok:
 					inc r19
 					jmp light_while2
 				light_while_end2:
-			
+
 				if_min_l_g_l:
 				;if min_l > l:
 					cp r19, r20
@@ -1900,7 +1900,7 @@ pg_capacity_ok:
 		; order.append(point[min_index])
 		ldi xh, high(ObservationPath)
 		ldi xl, low(ObservationPath)
-		ldi r22, OBS_POINT_STRIDE 
+		ldi r22, OBS_POINT_STRIDE
 		mul r9, r22
 		add xl, r0
 		adc xh, r1
@@ -1960,7 +1960,7 @@ Greedy_search:
 	; counter = 1
 	clr r6
 	inc r6
-	
+
 	greedy_while:
 	; while True:
 		; max_diff = 0
@@ -2291,7 +2291,7 @@ Light_path:
 		muls r19, r20
 		mov r23, r0
 		cp r22, r23
-		
+
 		in r24, SREG
 		in r25, SREG
 		lsr r25
@@ -2299,59 +2299,54 @@ Light_path:
 		sbrc r24, 2
 		jmp if_cur_grad_sh_max_grad_end
 		if_visiable:
-			; v**2 >= (org_x - cur_x)**2 + (org_y - cur_y)**2 + (mountain[org_y][org_x] - mountain[cur_y][cur_x])**2:
+			; Use unsigned 16-bit arithmetic for visibility check
+			; Compute dz = |h(org) - h(cur)| in r22
 			array_i_j MountainMatrix, MAP_SIZE, r2, r3
 			ld r22, x
 			array_i_j MountainMatrix, MAP_SIZE, r4, r5
 			ld r23, x
 			sub r22, r23
-			brpl light_positive_dz
+			brpl vis_dz_ok
 			neg r22
-			light_positive_dz:
-
+		vis_dz_ok:
+			; Compute dx = |org_x - cur_x| in r23
 			mov r23, r2
-			mov r24, r4
-			sub r23, r24
-			brpl light_positive_dx
+			sub r23, r4
+			brpl vis_dx_ok
 			neg r23
-			light_positive_dx:
-
+		vis_dx_ok:
+			; Compute dy = |org_y - cur_y| in r24
 			mov r24, r3
-			mov r25, r5
-			sub r24, r25
-			brpl light_positive_dy
+			sub r24, r5
+			brpl vis_dy_ok
 			neg r24
-			light_positive_dy:
-
+		vis_dy_ok:
+			; Preserve dx in r25 for squaring later
+			mov r25, r23
+			; sum16 = dz^2
 			mul r22, r22
 			mov r22, r0
-
-			mul r23, r23
-			mov r23, r0
-
+			mov r23, r1
+			; sum16 += dx^2 (using r25)
+			mul r25, r25
+			add r22, r0
+			adc r23, r1
+			; sum16 += dy^2
 			mul r24, r24
-			mov r24, r0
-
+			add r22, r0
+			adc r23, r1
+			; v2 = Visibility^2 in r24:r25
 			ldi xh, high(Visibility)
 			ldi xl, low(Visibility)
 			ld r25, x
 			mul r25, r25
-			mov r25, r0
-
-			add r22, r23
-			in r23, SREG
-			sbrc r23, 3
-			jmp if_cur_grad_sh_max_grad_end
-
-			add r22, r24
-			in r23, SREG
-			sbrc r23, 3
-			jmp if_cur_grad_sh_max_grad_end
-
-			cp r25, r22
-			in r23, SREG
-			sbrc r23, 0
-			jmp if_cur_grad_sh_max_grad_end
+			mov r24, r0
+			mov r25, r1
+			; Compare v2 (r25:r24) with sum16 (r23:r22)
+			cp r24, r22
+			cpc r25, r23
+			brcs if_cur_grad_sh_max_grad_end   ; if v^2 < sum => not visible
+			clr r1                             ; restore zero reg after muls
 
 			; cur_cover[cur_y][cur_x] = 1
 			array_i_j Cur_CoverageMask, MAP_SIZE, r4, r5
