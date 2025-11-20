@@ -1120,6 +1120,17 @@ hs_check_dbg:
 			lds workA, DebugFlags
 			sbrs workA, 0
 			rjmp hs_scroll
+			; In debug mode: PB0 toggles hex subpage (bit1)
+			lds workB, ButtonPressCnt
+			tst workB
+			breq hs_dbg_render
+			clr workB
+			sts ButtonPressCnt, workB
+			lds workA, DebugFlags
+			ldi workC, (1<<1)
+			eor workA, workC
+			sts DebugFlags, workA
+hs_dbg_render:
 			rcall DumpObservationPathDebug
 			ret
 hs_scroll:
