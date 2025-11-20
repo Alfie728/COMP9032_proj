@@ -415,6 +415,8 @@ DebugFlags:            .byte 1          ; bit0 = scroll debug mode toggle (PB1)
 DbgSelX:               .byte 1          ; last selected X in Greedy_search
 DbgSelY:               .byte 1          ; last selected Y in Greedy_search
 DbgSelZ:               .byte 1          ; last selected Z in Greedy_search
+DbgOPAddrL:           .byte 1          ; store address low for OP[0]
+DbgOPAddrH:           .byte 1          ; store address high for OP[0]
 QueueHead:             .byte 1          ; BFS helper
 QueueTail:             .byte 1
 QueueBuffer:           .byte MAP_CELLS
@@ -2070,9 +2072,15 @@ greedy_store_ok:
 			add xl, r0
 			adc xh, r1
 			clr r1
-		st x+, r4
-		st x+, r5
-		st x+, r23
+			; if first index (r6==0), snapshot the address we will store
+			cpi r6, 0
+			brne gso_no_addr_snap
+			sts DbgOPAddrL, xl
+			sts DbgOPAddrH, xh
+gso_no_addr_snap:
+			st x+, r4
+			st x+, r5
+			st x+, r23
 		; pre_cover = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
 		load_array_from_data Pre_CoverageMask, Max_CoverageMask, MAP_CELLS
 
@@ -2956,13 +2964,13 @@ DumpObservationHex:
 	sts LCDLine0+9, workB
 	sts LCDLine0+10, workA
 
-	; OP0 header 'OP '
-	ldi workA, 'O'
-	sts LCDLine1+0, workA
-	ldi workA, 'P'
-	sts LCDLine1+1, workA
-	ldi workA, ' '
-	sts LCDLine1+2, workA
+    ; OP0 header 'OP '
+    ldi workA, 'O'
+    sts LCDLine1+0, workA
+    ldi workA, 'P'
+    sts LCDLine1+1, workA
+    ldi workA, ' '
+    sts LCDLine1+2, workA
 	; reload OP0 bytes
 	ldi XL, low(ObservationPoints)
 	ldi XH, high(ObservationPoints)
@@ -2985,7 +2993,19 @@ DumpObservationHex:
 	mov workA, workE
 	rcall dbg_hex_byte
 	sts LCDLine1+9, workB
-	sts LCDLine1+10, workA
+    sts LCDLine1+10, workA
+
+    ; show addr low/high at end: 'A' + L/H
+    ldi workA, 'A'
+    sts LCDLine1+11, workA
+    lds workA, DbgOPAddrL
+    rcall dbg_hex_byte
+    sts LCDLine1+12, workB
+    sts LCDLine1+13, workA
+    lds workA, DbgOPAddrH
+    rcall dbg_hex_byte
+    sts LCDLine1+14, workB
+    sts LCDLine1+15, workA
 
 	pop XH
 	pop XL
