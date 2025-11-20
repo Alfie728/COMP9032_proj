@@ -104,32 +104,38 @@
 ;-------------------------------------------------------------------------------
 ;void load_array_from_program(program addr, data addr, int length)
 ;Description: data addr <- program addr
-;r16: temp, r17: counter
+;Uses 16-bit counter (r25:r24) so length can exceed 255
 .macro load_array_from_program
 	push zh
 	push zl
 	push xh
 	push xl
 	push r16
+	push r24
+	push r25
 	in r16, SREG
 	push r16
-	push r17
 	ldi zh, high(@0 << 1)
 	ldi zl, low(@0 << 1)
 	ldi xh,	high(@1)
 	ldi xl, low(@1)
-	clr r17
+	; load length into r25:r24
+	ldi r24, low(@2)
+	ldi r25, high(@2)
+	; if length == 0 -> end
+	mov r16, r24
+	or  r16, r25
+	breq load_byte_from_program_end
 load_byte_from_program:
-	cpi r17, @2 
-	brsh load_byte_from_program_end
 	lpm r16, z+
 	st x+, r16
-	inc r17
-	rjmp load_byte_from_program
+	sbiw r25, 1
+	brne load_byte_from_program
 load_byte_from_program_end:
-	pop r17
 	pop r16
 	out SREG, r16
+	pop r25
+	pop r24
 	pop r16
 	pop xl
 	pop xh
@@ -139,32 +145,38 @@ load_byte_from_program_end:
 
 ;void load_array_from_data(data addr1, data addr2, int length) 
 ; Description: data addr1 <- data addr2
-;r16: temp, r17: counter
+;Uses 16-bit counter (r25:r24) so length can exceed 255
 .macro load_array_from_data
 	push yh
 	push yl
 	push xh
 	push xl
 	push r16
+	push r24
+	push r25
 	in r16, SREG
 	push r16
-	push r17
 	ldi yh, high(@0)
 	ldi yl, low(@0)
 	ldi xh,	high(@1)
 	ldi xl, low(@1)
-	clr r17
+	; load length into r25:r24
+	ldi r24, low(@2)
+	ldi r25, high(@2)
+	; if length == 0 -> end
+	mov r16, r24
+	or  r16, r25
+	breq load_byte_from_data_end
 load_byte_from_data:
-	cpi r17, @2 
-	brsh load_byte_from_data_end
 	ld r16, x+
 	st y+, r16
-	inc r17
-	rjmp load_byte_from_data
+	sbiw r25, 1
+	brne load_byte_from_data
 load_byte_from_data_end:
-	pop r17
 	pop r16
 	out SREG, r16
+	pop r25
+	pop r24
 	pop r16
 	pop xl
 	pop xh
@@ -390,7 +402,7 @@ Pre_CoverageMask:		.byte MAP_CELLS  ; 0 = unseen, 1 = covered
 Max_CoverageMask:		.byte MAP_CELLS
 PathLength:				.byte 1          ; number of stored observation points
 ObservationPoints:		.byte PATH_BUF_BYTES
-Visted:					.byte PATH_BUF_BYTES
+Visted:					.byte MAX_OBS_POINTS
 ObservationPath:       .byte PATH_BUF_BYTES
 PathIndex:             .byte 1          ; active observation point
 ScrollHead:            .byte 1          ; LCD scroll pointer into path buffer
@@ -1704,8 +1716,8 @@ Path_generation:
 	ld r8, x
 
     ; Visted = [0 for _ in range(len(points))]
-    ; IMPORTANT: Visted has PATH_BUF_BYTES bytes; do NOT clear MAP_CELLS (overrun)
-    load_array_from_program zeros, Visted, PATH_BUF_BYTES
+    ; Clear exactly MAX_OBS_POINTS bytes (size of Visted)
+    load_array_from_program zeros, Visted, MAX_OBS_POINTS
 	; Visted[0] = 1
 	clr r22
 	array_i Visted, r22
