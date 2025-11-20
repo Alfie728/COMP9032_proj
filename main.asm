@@ -2073,7 +2073,7 @@ greedy_store_ok:
 			adc xh, r1
 			clr r1
             ; if first index (r6==0), snapshot the address we will store
-            cpi r6, 0
+            tst r6                ; cpi requires r16..r31; use tst for r6
             brne gso_no_addr_snap
             mov workA, xl
             sts DbgOPAddrL, workA
