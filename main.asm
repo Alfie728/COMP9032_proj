@@ -2065,24 +2065,25 @@ greedy_store_ok:
 			sts DbgSelX, r4
 			sts DbgSelY, r5
 			sts DbgSelZ, r23
-			ldi	xh, high(ObservationPoints)
-			ldi xl, low(ObservationPoints)
+			; Use Y as pointer to avoid X clobbering by helper macros
+			ldi	YH, high(ObservationPoints)
+			ldi YL, low(ObservationPoints)
 			ldi r22, 3
 			mul r6, r22
-			add xl, r0
-			adc xh, r1
+			add YL, r0
+			adc YH, r1
 			clr r1
-            ; if first index (r6==0), snapshot the address we will store
-            tst r6                ; cpi requires r16..r31; use tst for r6
-            brne gso_no_addr_snap
-            mov workA, xl
-            sts DbgOPAddrL, workA
-            mov workA, xh
-            sts DbgOPAddrH, workA
+			; if first index (r6==0), snapshot the address we will store
+			tst r6                ; cpi requires r16..r31; use tst for r6
+			brne gso_no_addr_snap
+			mov workA, YL
+			sts DbgOPAddrL, workA
+			mov workA, YH
+			sts DbgOPAddrH, workA
 gso_no_addr_snap:
-            st x+, r4
-            st x+, r5
-            st x+, r23
+			st Y+, r4
+			st Y+, r5
+			st Y+, r23
 		; pre_cover = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
 		load_array_from_data Pre_CoverageMask, Max_CoverageMask, MAP_CELLS
 
