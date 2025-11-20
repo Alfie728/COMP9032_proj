@@ -76,9 +76,6 @@
 .equ STATE_PLAYBACK     = 4
 .equ STATE_DONE         = 5
 
-; Push button bits on PINB
-.equ PB0_MASK           = 0b00000001
-.equ PB1_MASK           = 0b00000010
 
 ; Keypad wiring constants (reuse from lab references once finalised)
 .equ ROWMASK            = 0x0F
@@ -648,7 +645,7 @@ SampleInputs:
 	in temp0, PINB
 	com temp0
 	mov workA, temp0
-	andi workA, (PB0_MASK | PB1_MASK)
+
 	mov temp0, workA
 	sts ButtonSnapshot, temp0
 
@@ -1062,9 +1059,9 @@ hc_render:
 
 HandlePathGenState:
 		; S4: reset coverage and build a trivial non-empty path
-		rcall ResetCoverageMap
-		rcall GenerateSearchPath
-		rcall PreparePathScrollData
+		;rcall ResetCoverageMap
+		;rcall GenerateSearchPath
+		;rcall PreparePathScrollData
 		; if PathLength > 0, set S4 flag and move to scroll
 		lds workA, PathLength
 		cpi workA, 0
