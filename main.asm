@@ -1040,19 +1040,8 @@ HandleConfigState:
     sbrs workB, 3
     rjmp hc_do_s4
     ;rjmp hc_check_pb0
+
 hc_do_s4:
-    rcall ResetCoverageMap
-    rcall GenerateSearchPath
-    rcall PreparePathScrollData
-    lds workA, PathLength
-    cpi workA, 0
-    breq hc_check_pb0
-    ori workB, (1<<3)
-    sts StageFlags, workB
-    ; auto-transition to scroll
-    ldi workA, STATE_SCROLL_PATH
-    sts DroneState, workA
-    ret
 Pause_wait_PB0:
 		; wait for PB0 press to begin playback
 		lds workB, ButtonPressCnt
@@ -1060,15 +1049,21 @@ Pause_wait_PB0:
 		rjmp pause_wait_pb0
 		clr workB
 		sts ButtonPressCnt, workB
-		ret	
-hc_check_pb0:
-    ; If PB0 pressed, transition to path generation state (will go to scroll)
-    lds workB, ButtonSnapshot
-    sbrs workB, 0              ; PB0 bit
-    rjmp hc_render
-    ldi workA, STATE_PATH_GEN
+		
+
+    rcall ResetCoverageMap
+    rcall GenerateSearchPath
+    rcall PreparePathScrollData
+    lds workA, PathLength
+    cpi workA, 0
+    ;breq hc_check_pb0
+    ori workB, (1<<3)
+    sts StageFlags, workB
+    ; auto-transition to scroll
+    ldi workA, STATE_SCROLL_PATH
     sts DroneState, workA
     ret
+
 hc_render:
     ; Ensure CONFIG screen reflects latest edits/commits
     rcall UpdateLCDForConfig
