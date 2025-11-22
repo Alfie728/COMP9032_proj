@@ -1748,14 +1748,13 @@ Path_generation:
 	push r23
 	in r23, SREG
 	push r23
-
+	
 	ldi xh, high(PathLength)
 	ldi xl, low(PathLength)
 	ld r8, x
 
-    ; Visted = [0 for _ in range(len(points))]
-    ; Clear exactly MAX_OBS_POINTS bytes (size of Visted)
-    load_array_from_program zeros, Visted, MAX_OBS_POINTS
+	; Visted = [0 for _ in range(len(points))]
+	load_array_from_program zeros, Visted, MAP_CELLS
 	; Visted[0] = 1
 	clr r22
 	array_i Visted, r22
@@ -1780,12 +1779,6 @@ Path_generation:
 	mov r9, r22
 	Path_generation_while:
 	; while True
-		; Guard capacity: if counter >= MAX_OBS_POINTS, stop building order
-		ldi r22, MAX_OBS_POINTS
-		cp r9, r22
-		brlo pg_capacity_ok
-		jmp Path_generation_while_end
-pg_capacity_ok:
 		;min_l = 99
 		ldi r20, 99
 		;min_index = 0
@@ -1820,7 +1813,7 @@ pg_capacity_ok:
 				mov r22, r0
 				add xl, r22
 				ldi r22, 0
-				adc xh, r22
+				adc xh, r22 
 				ld r6, x+
 				ld r7, x
 				light_while2:
@@ -1898,7 +1891,7 @@ pg_capacity_ok:
 					inc r19
 					jmp light_while2
 				light_while_end2:
-
+			
 				if_min_l_g_l:
 				;if min_l > l:
 					cp r19, r20
@@ -1925,9 +1918,10 @@ pg_capacity_ok:
 		ldi xl, low(ObservationPoints)
 		ldi r22, OBS_POINT_STRIDE
 		mul r21, r22
-		add xl, r0
-		adc xh, r1
-		clr r1
+		mov r22, r0
+		add xl, r22
+		ldi r22, 0
+		adc xh, r22
 		ld r2, x+
 		ld r3, x+
 		ld r23, x
@@ -1935,11 +1929,12 @@ pg_capacity_ok:
 		; order.append(point[min_index])
 		ldi xh, high(ObservationPath)
 		ldi xl, low(ObservationPath)
-		ldi r22, OBS_POINT_STRIDE
+		ldi r22, OBS_POINT_STRIDE 
 		mul r9, r22
-		add xl, r0
-		adc xh, r1
-		clr r1
+		mov r22, r0
+		add xl, r22
+		ldi r22, 0
+		adc xh, r22
 		st x+, r2
 		st x+, r3
 		st x, r23
@@ -1992,9 +1987,10 @@ Greedy_search:
 	in r23, SREG
 	push r23
 
-	; counter = 0 (store first point at index 0)
+	; counter = 1
 	clr r6
-
+	inc r6
+	
 	greedy_while:
 	; while True:
 		; max_diff = 0
@@ -2052,38 +2048,19 @@ Greedy_search:
 			sbrc r22, 1
 			jmp greedy_while_end
 
-		; Guard capacity: if counter >= MAX_OBS_POINTS, stop appending
-		ldi r22, MAX_OBS_POINTS
-		cp r6, r22
-		brlo greedy_store_ok
-		rjmp greedy_while_end
-greedy_store_ok:
-			;point.append(max_point)
-			array_i_j MountainMatrix, MAP_SIZE, r4, r5
-			ld r23, x
-			; store debug selection snapshot
-			sts DbgSelX, r4
-			sts DbgSelY, r5
-			sts DbgSelZ, r23
-			; Use Y as pointer to avoid X clobbering by helper macros
-			ldi	YH, high(ObservationPoints)
-			ldi YL, low(ObservationPoints)
-			ldi r22, 3
-			mul r6, r22
-			add YL, r0
-			adc YH, r1
-			clr r1
-			; if first index (r6==0), snapshot the address we will store
-			tst r6                ; cpi requires r16..r31; use tst for r6
-			brne gso_no_addr_snap
-			mov workA, YL
-			sts DbgOPAddrL, workA
-			mov workA, YH
-			sts DbgOPAddrH, workA
-gso_no_addr_snap:
-			st Y+, r4
-			st Y+, r5
-			st Y+, r23
+		;point.append(max_point)
+		array_i_j MountainMatrix, MAP_SIZE, r4, r5
+		ld r23, x
+		ldi	xh, high(ObservationPoints)
+		ldi xl, low(ObservationPoints)
+		ldi r22, 3
+		mul r6, r22
+		add xl, r0
+		ldi r22, 0
+		adc xh, r22
+		st x+, r4
+		st x+, r5
+		st x+, r23
 		; pre_cover = [[max_map[j][i] for i in range(len(mountain))] for j in range(len(mountain))]
 		load_array_from_data Pre_CoverageMask, Max_CoverageMask, MAP_CELLS
 
@@ -2114,13 +2091,15 @@ gso_no_addr_snap:
 
 ; void search(org_x, org_y)
 ; Description: search all light path
-; r2 = org_x, r3 = org_y, r4 = v, r18 = x, r19 = y, r20 = des_x, r21 = des_y, r22 = temp
+; r2 = org_x, r3 = org_y, r4 = v, r6 = des_x, r7 = des_y, r18 = x, r19 = y, r20 = des_x, r21 = des_y, r22 = temp
 Search:
 	push xh
 	push xl
 	push r2
 	push r3
 	push r4
+	push r6
+	push r7
 	push r18
 	push r19
 	push r20
@@ -2191,13 +2170,14 @@ Search:
 	pop r20
 	pop r19
 	pop r18
+	pop r7
+	pop r6
 	pop r4
 	pop r3
 	pop r2
 	pop xl
 	pop xh
-	reti
-
+	ret
 
 ; void Light_path(org_x, org_y, des_x, des_y)
 ; Description: Scan like light
@@ -2338,7 +2318,7 @@ Light_path:
 		muls r19, r20
 		mov r23, r0
 		cp r22, r23
-
+		
 		in r24, SREG
 		in r25, SREG
 		lsr r25
@@ -2346,54 +2326,59 @@ Light_path:
 		sbrc r24, 2
 		jmp if_cur_grad_sh_max_grad_end
 		if_visiable:
-			; Use unsigned 16-bit arithmetic for visibility check
-			; Compute dz = |h(org) - h(cur)| in r22
+			; v**2 >= (org_x - cur_x)**2 + (org_y - cur_y)**2 + (mountain[org_y][org_x] - mountain[cur_y][cur_x])**2:
 			array_i_j MountainMatrix, MAP_SIZE, r2, r3
 			ld r22, x
 			array_i_j MountainMatrix, MAP_SIZE, r4, r5
 			ld r23, x
 			sub r22, r23
-			brpl vis_dz_ok
+			brpl light_positive_dz
 			neg r22
-		vis_dz_ok:
-			; Compute dx = |org_x - cur_x| in r23
+			light_positive_dz:
+
 			mov r23, r2
-			sub r23, r4
-			brpl vis_dx_ok
+			mov r24, r4
+			sub r23, r24
+			brpl light_positive_dx
 			neg r23
-		vis_dx_ok:
-			; Compute dy = |org_y - cur_y| in r24
+			light_positive_dx:
+
 			mov r24, r3
-			sub r24, r5
-			brpl vis_dy_ok
+			mov r25, r5
+			sub r24, r25
+			brpl light_positive_dy
 			neg r24
-		vis_dy_ok:
-			; Preserve dx in r25 for squaring later
-			mov r25, r23
-			; sum16 = dz^2
+			light_positive_dy:
+
 			mul r22, r22
 			mov r22, r0
-			mov r23, r1
-			; sum16 += dx^2 (using r25)
-			mul r25, r25
-			add r22, r0
-			adc r23, r1
-			; sum16 += dy^2
+
+			mul r23, r23
+			mov r23, r0
+
 			mul r24, r24
-			add r22, r0
-			adc r23, r1
-			; v2 = Visibility^2 in r24:r25
+			mov r24, r0
+
 			ldi xh, high(Visibility)
 			ldi xl, low(Visibility)
 			ld r25, x
 			mul r25, r25
-			mov r24, r0
-			mov r25, r1
-			; Compare v2 (r25:r24) with sum16 (r23:r22)
-			cp r24, r22
-			cpc r25, r23
-			brcs if_cur_grad_sh_max_grad_end   ; if v^2 < sum => not visible
-			clr r1                             ; restore zero reg after muls
+			mov r25, r0
+
+			add r22, r23
+			in r23, SREG
+			sbrc r23, 3
+			jmp if_cur_grad_sh_max_grad_end
+
+			add r22, r24
+			in r23, SREG
+			sbrc r23, 3
+			jmp if_cur_grad_sh_max_grad_end
+
+			cp r25, r22
+			in r23, SREG
+			sbrc r23, 0
+			jmp if_cur_grad_sh_max_grad_end
 
 			; cur_cover[cur_y][cur_x] = 1
 			array_i_j Cur_CoverageMask, MAP_SIZE, r4, r5
