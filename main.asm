@@ -47,7 +47,7 @@
 .equ LCD_COLS           = 16
 .equ LCD_ROWS           = 2
 .equ VISIBILITY_MAX     = 15           ; displayed in two chars
-.equ DEFAULT_ALT_DM     = 61           ; Figure 4(c): 61 dm
+.equ DEFAULT_ALT_DM     = 5           ; Figure 4(c): 61 dm
 .equ DEFAULT_SPEED_DMPS = 2            ; Figure 4(c): 2 dm/s
 
 ; LCD command constants (reuse Lab 3/4 sequences)
@@ -2474,7 +2474,7 @@ Search:
 	pop r2
 	pop xl
 	pop xh
-	reti
+	ret
 
 
 ; void Light_path(org_x, org_y, des_x, des_y)
@@ -3236,7 +3236,3 @@ zeros: .db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
 			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-
-; ==============================================================================
-; End of stub
-; ==============================================================================
