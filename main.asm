@@ -2088,9 +2088,8 @@ Path_generation:
 				mul r18, r22
 				mov r22, r0
 				add xl, r22
-				mov r22, r1
-				adc xh, r22
-				clr r1
+				ldi r22, 0
+				adc xh, r22 
 				ld r6, x+
 				ld r7, x
 				light_while2:
@@ -2196,10 +2195,9 @@ Path_generation:
 		ldi r22, OBS_POINT_STRIDE
 		mul r21, r22
 		mov r22, r0
-        add xl, r22
-		mov r22, r1
+		add xl, r22
+		ldi r22, 0
 		adc xh, r22
-		clr r1
 		ld r2, x+
 		ld r3, x+
 		ld r23, x
@@ -2211,9 +2209,8 @@ Path_generation:
 		mul r9, r22
 		mov r22, r0
 		add xl, r22
-		mov r22, r1
+		ldi r22, 0
 		adc xh, r22
-		clr r1
 		st x+, r2
 		st x+, r3
 		st x, r23
@@ -2224,16 +2221,7 @@ Path_generation:
 		; counter += 1
 		inc r9
 		jmp Path_generation_while
-Path_generation_while_end:
-	; store the actual number of points appended (r9) as the new PathLength
-	tst r9
-	brne pg_store_len
-	ldi r22, 1
-	mov r9, r22
-pg_store_len:
-	ldi xh, high(PathLength)
-	ldi xl, low(PathLength)
-	st x, r9
+	Path_generation_while_end:
 
 	pop r23
 	out SREG, r23
@@ -2275,8 +2263,9 @@ Greedy_search:
 	in r23, SREG
 	push r23
 
-	; counter = 0
+	; counter = 1
 	clr r6
+	inc r6
 	
 	greedy_while:
 	; while True:
@@ -2342,11 +2331,9 @@ Greedy_search:
 		ldi xl, low(ObservationPoints)
 		ldi r22, 3
 		mul r6, r22
-		mov r22, r0
-		add xl, r22
-		mov r22, r1
+		add xl, r0
+		ldi r22, 0
 		adc xh, r22
-		clr r1
 		st x+, r4
 		st x+, r5
 		st x+, r23
@@ -2357,18 +2344,6 @@ Greedy_search:
 		jmp greedy_while
 	greedy_while_end:
 
-	tst r6
-	brne gs_store_len
-	; no points were found, seed slot 0 with zeroes and force length = 1
-	ldi xh, high(ObservationPoints)
-	ldi xl, low(ObservationPoints)
-	clr r22
-	st x+, r22
-	st x+, r22
-	st x, r22
-	ldi r22, 1
-	mov r6, r22
-gs_store_len:
 	ldi xh, high(PathLength)
 	ldi xl, low(PathLength)
 	st x, r6
@@ -2392,13 +2367,15 @@ gs_store_len:
 
 ; void search(org_x, org_y)
 ; Description: search all light path
-; r2 = org_x, r3 = org_y, r4 = v, r18 = x, r19 = y, r20 = des_x, r21 = des_y, r22 = temp
+; r2 = org_x, r3 = org_y, r4 = v, r6 = des_x, r7 = des_y, r18 = x, r19 = y, r20 = des_x, r21 = des_y, r22 = temp
 Search:
 	push xh
 	push xl
 	push r2
 	push r3
 	push r4
+	push r6
+	push r7
 	push r18
 	push r19
 	push r20
@@ -2469,13 +2446,14 @@ Search:
 	pop r20
 	pop r19
 	pop r18
+	pop r7
+	pop r6
 	pop r4
 	pop r3
 	pop r2
 	pop xl
 	pop xh
 	ret
-
 
 ; void Light_path(org_x, org_y, des_x, des_y)
 ; Description: Scan like light
